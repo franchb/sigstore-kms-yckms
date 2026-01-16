@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package yckms implement the interface with Yandex Cloud kms service
 package main
 
 import (
@@ -38,15 +37,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-//func init() {
-//	sigkms.AddProvider(ReferenceScheme, func(ctx context.Context, keyResourceID string, _ crypto.Hash, _ ...signature.RPCOption) (sigkms.SignerVerifier, error) {
-//		return LoadSignerVerifier(ctx, keyResourceID)
-//	})
-//}
-
 const (
 	cacheKey                   = "sign_key"
-	ReferenceScheme            = "yckms://"
 	EnvYcIAMToken              = "YC_IAM_TOKEN"
 	EnvYcOAuthToken            = "YC_OAUTH_TOKEN"
 	EnvYcServiceAccountKeyFile = "YC_SERVICE_ACCOUNT_KEY_FILE"
