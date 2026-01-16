@@ -1,0 +1,232 @@
+version: "2"
+run:
+  modules-download-mode: readonly
+  issues-exit-code: 1
+  tests: true
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    #    - cyclop
+    - decorder
+    #    - depguard
+    - dogsled
+    #    - dupl
+    #    - dupword
+    - durationcheck
+    #    - errcheck
+    - errchkjson
+    #    - errname
+    #    - errorlint
+    - exhaustive
+    - forbidigo
+    - reassign
+    #    - musttag
+    #    - ireturn
+    - grouper
+    #    - err113
+    #    - godoclint
+    #    - exhaustruct
+    #    - inamedparam
+    - asasalint
+    - forcetypeassert
+    #    - funlen
+    #    - maintidx
+    - gocheckcompilerdirectives
+    #    - gochecknoglobals
+    #    - gochecknoinits
+    - gochecksumtype
+    #    - gocognit
+    #    - goconst
+    #    - gocritic
+    #    - gocyclo
+    #    - godot
+    #    - godox
+    #    - goheader
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    #    - govet
+    - importas
+    #    - ineffassign
+    #    - lll
+    - loggercheck
+    - makezero
+    - mirror
+    #    - misspell
+    #    - mnd
+    - nakedret
+    #    - nestif
+    - nilerr
+    - nilnil
+    - noctx
+    #    - nolintlint
+    - paralleltest
+    - perfsprint
+    - prealloc
+    #    - predeclared
+    #    - revive
+    - rowserrcheck
+    - sloglint
+    - sqlclosecheck
+    - staticcheck
+    #    - tagliatelle
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    #    - unconvert
+    #    - unparam
+    #    - unused
+    - usestdlibvars
+    #    - varnamelen
+    #    - wastedassign
+    - whitespace
+    #    - wrapcheck
+    - wsl_v5
+    - usetesting
+    #    - testableexamples
+    #    - protogetter
+    - nlreturn
+    - iotamixing
+    - intrange
+    - tagalign
+    - spancheck
+    - iface
+    - interfacebloat
+    - modernize
+    - canonicalheader
+    - embeddedstructfieldcheck
+    - exptostd
+    #    - funcorder
+    #    #- err113
+    - fatcontext
+    - ginkgolinter
+    #    - recvcheck
+    - promlinter
+    - nosprintfhostport
+    - nilnesserr
+  #    - ireturn
+  settings:
+    cyclop:
+      max-complexity: 25
+      package-average: 15
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+            - '!$test'
+          allow:
+            - $gostd
+        tests:
+          files:
+            - $test
+          allow:
+            - $gostd
+    dupl:
+      threshold: 100
+    funlen:
+      lines: 100
+      statements: 50
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    gocritic:
+      disabled-checks:
+        - dupImport
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    gocyclo:
+      min-complexity: 15
+    govet:
+      enable-all: true
+    lll:
+      line-length: 120
+    misspell:
+      locale: US
+    revive:
+      severity: warning
+      enable-all-rules: true
+      rules:
+        - name: line-length-limit
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments: [ 120 ]
+        - name: unhandled-error
+          severity: warning
+          disabled: false
+          arguments:
+            - ".*WriteString$"
+            - ".*WriteByte$"
+        - name: add-constant
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments:
+            - max-lit-count: "3"
+              allow-strs: '""'
+              allow-ints: "0,1,2"
+              allow-floats: "0.0,0.,1.0,1.,2.0,2."
+    varnamelen:
+      max-distance: 6
+      min-name-length: 2
+      check-receiver: true
+      check-return: true
+      ignore-names:
+        - err
+        - wg
+      ignore-type-assert-ok: true
+      ignore-map-index-ok: true
+      ignore-chan-recv-ok: true
+      ignore-decls:
+        - c echo.Context
+        - t testing.T
+        - f *foo.Bar
+        - e error
+        - i int
+        - const C
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - cyclop
+          - goconst
+        path: (.+)_test\.go
+    paths:
+      - internal/syslog
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/golangci/golangci-lint
+  exclusions:
+    generated: lax
+    paths:
+      - internal/syslog
+      - third_party$
+      - builtin$
+      - examples$

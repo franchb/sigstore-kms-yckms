@@ -43,3 +43,10 @@ tools:
     with:
       entrypoint: cmd/betteralign
       module: github.com/dkorunic/betteralign
+
+  - name: gosimports
+    version:
+      want: v0.3.8
+    method: github-release
+    with:
+      repo: rinchsan/gosimports

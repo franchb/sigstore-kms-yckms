@@ -61,7 +61,7 @@ tasks:
 
   govulncheck:
     desc: Check Go vulnerabilities
-    deps: [tools]
+    deps: [ tools ]
     cmds:
       - "{{ .TOOL_DIR }}/govulncheck ./..."
 
@@ -71,14 +71,22 @@ tasks:
     deps: [ tools ]
     cmds:
       - gofmt -w -s .
-      - "{{ .TOOL_DIR }}/gosimports -local github.com/anchore -w ."
+      - "{{ .TOOL_DIR }}/gosimports -local $(go list -m) -w ."
       - go mod tidy
+
+  betteralign:
+    desc: Align Go structs in memory
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/betteralign -apply ./..."
+
 
   lint-fix:
     desc: Auto-format all source code + run golangci lint fixers
     deps: [ tools ]
     cmds:
       - task: format
+      - task: betteralign
       - "{{ .TOOL_DIR }}/golangci-lint run --tests=false --fix"
 
   lint:
