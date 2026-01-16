@@ -116,7 +116,7 @@ tasks:
       COVERAGE_THRESHOLD: 60
     cmds:
       - "go test -coverprofile {{ .TMP_DIR }}/unit-coverage-details.txt ./..."
-      - cmd: ".github/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"
+      - cmd: "ci/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"
         silent: true
 
   tmpdir:
