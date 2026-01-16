@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"regexp"
 	"time"
@@ -39,8 +38,8 @@ import (
 
 const (
 	cacheKey                   = "sign_key"
-	EnvYcIAMToken              = "YC_IAM_TOKEN"
-	EnvYcOAuthToken            = "YC_OAUTH_TOKEN"
+	EnvYcIAMToken              = "YC_IAM_TOKEN"   //nolint:gosec // not credentials
+	EnvYcOAuthToken            = "YC_OAUTH_TOKEN" //nolint:gosec // not credentials
 	EnvYcServiceAccountKeyFile = "YC_SERVICE_ACCOUNT_KEY_FILE"
 )
 
@@ -137,10 +136,6 @@ func newYcKmsClient(ctx context.Context, referenceStr string, opts ...grpc.DialO
 		return nil, err
 	}
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	y := &ycKmsClient{
 		refString: referenceStr,
 		skCache:   nil,
@@ -182,18 +177,14 @@ func newYcKmsClient(ctx context.Context, referenceStr string, opts ...grpc.DialO
 
 func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 	if iamToken := os.Getenv(EnvYcIAMToken); iamToken != "" {
-		log.Printf("Using IAM Token from '%s' environment variable as credentials", EnvYcIAMToken)
-
+		// log.Printf("Using IAM Token from '%s' environment variable as credentials", EnvYcIAMToken)
 		return ycsdk.NewIAMTokenCredentials(iamToken), nil
 	} else if oAuthToken := os.Getenv(EnvYcOAuthToken); oAuthToken != "" {
-		log.Printf("Using OAuth Token from '%s' environment variable as credentials", EnvYcOAuthToken)
-
+		// log.Printf("Using OAuth Token from '%s' environment variable as credentials", EnvYcOAuthToken)
 		return ycsdk.OAuthToken(oAuthToken), nil
 	} else if serviceAccountKeyFile := os.Getenv(EnvYcServiceAccountKeyFile); serviceAccountKeyFile != "" {
 		key, err := iamkey.ReadFromJSONFile(serviceAccountKeyFile)
-
-		log.Printf("Using service account key file from '%s' environment variable as credentials", EnvYcServiceAccountKeyFile)
-
+		// log.Printf("Using service account key file from '%s' environment variable as credentials", EnvYcServiceAccountKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("error reading service account key file: %w", err)
 		}
@@ -203,8 +194,7 @@ func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 		creds := ycsdk.InstanceServiceAccount()
 		// Try to connect Compute Instance Metadata Service
 		if _, err := creds.IAMToken(ctx); err == nil {
-			log.Printf("Using compute instance service account token as credentials")
-
+			// log.Printf("Using compute instance service account token as credentials")
 			return creds, nil
 		}
 	}
@@ -234,29 +224,60 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
 		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
 		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256:
-		sk.Verifier, err = signature.LoadRSAPSSVerifier(pubKey.(*rsa.PublicKey), crypto.SHA256, nil)
+		rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key is not RSA")
+		}
+
+		sk.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA256, nil)
 		sk.HashFunc = crypto.SHA256
 	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
 		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
 		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384:
-		sk.Verifier, err = signature.LoadRSAPSSVerifier(pubKey.(*rsa.PublicKey), crypto.SHA384, nil)
+		rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key is not RSA")
+		}
+
+		sk.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA384, nil)
 		sk.HashFunc = crypto.SHA384
 	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
 		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
 		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512:
-		sk.Verifier, err = signature.LoadRSAPSSVerifier(pubKey.(*rsa.PublicKey), crypto.SHA512, nil)
+		rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key is not RSA")
+		}
+
+		sk.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA512, nil)
 		sk.HashFunc = crypto.SHA512
 	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256:
-		sk.Verifier, err = signature.LoadECDSAVerifier(pubKey.(*ecdsa.PublicKey), crypto.SHA256)
+		ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key is not ECDSA")
+		}
+
+		sk.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA256)
 		sk.HashFunc = crypto.SHA256
 	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384:
-		sk.Verifier, err = signature.LoadECDSAVerifier(pubKey.(*ecdsa.PublicKey), crypto.SHA384)
+		ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key is not ECDSA")
+		}
+
+		sk.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA384)
 		sk.HashFunc = crypto.SHA384
 	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512:
-		sk.Verifier, err = signature.LoadECDSAVerifier(pubKey.(*ecdsa.PublicKey), crypto.SHA512)
+		ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key is not ECDSA")
+		}
+
+		sk.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA512)
 		sk.HashFunc = crypto.SHA512
-	default:
-		return nil, errors.New("unknown algorithm specified by KMS")
+	case asymkms.AsymmetricSignatureAlgorithm_ASYMMETRIC_SIGNATURE_ALGORITHM_UNSPECIFIED,
+		asymkms.AsymmetricSignatureAlgorithm_ECDSA_SECP256_K1_SHA_256:
+		return nil, errors.New("unsupported algorithm specified by KMS")
 	}
 
 	if err != nil {
@@ -332,10 +353,13 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 		return nil, fmt.Errorf("yckms key create error: %w", err)
 	}
 
-	keyID := resp.(*asymkms.AsymmetricSignatureKey).Id
-	log.Printf("generated yckms KEY_ID: '%s'", keyID)
+	key, ok := resp.(*asymkms.AsymmetricSignatureKey)
+	if !ok {
+		return nil, errors.New("failed to cast response to *asymkms.AsymmetricSignatureKey")
+	}
+	// log.Printf("generated yckms KEY_ID: '%s'", keyID)
 	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{
-		KeyId: keyID,
+		KeyId: key.Id,
 	}
 
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)

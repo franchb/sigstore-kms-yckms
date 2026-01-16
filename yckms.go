@@ -124,7 +124,7 @@ func (y *SignerVerifier) CreateKey(ctx context.Context, algorithm string) (crypt
 }
 
 type cryptoSignerWrapper struct {
-	ctx      context.Context
+	ctx      context.Context //nolint:containedctx // need in Public()
 	sv       *SignerVerifier
 	errFunc  func(error)
 	hashFunc crypto.Hash
