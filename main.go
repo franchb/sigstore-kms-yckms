@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -26,10 +27,10 @@ func main() {
 	}
 	// spew.Fdump(os.Stderr, pluginArgs) // Useful for debugging
 
-	//signerVerifier := &YandexKMSSignerVerifier{
-	//	hashFunc:      pluginArgs.InitOptions.HashFunc,
-	//	keyResourceID: pluginArgs.InitOptions.KeyResourceID,
-	//}
+	signerVerifier, err := LoadSignerVerifier(context.TODO(), pluginArgs.InitOptions.KeyResourceID)
+	if err != nil {
+		handler.WriteErrorResponse(os.Stdout, err)
+	}
 
 	_, err = handler.Dispatch(os.Stdout, os.Stdin, pluginArgs, signerVerifier)
 	if err != nil {
