@@ -22,12 +22,13 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"github.com/jellydator/ttlcache/v3"
 	"io"
+	"log"
 	"os"
 	"regexp"
 	"time"
 
-	"github.com/jellydator/ttlcache/v3"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
 	asymkms "github.com/yandex-cloud/go-genproto/yandex/cloud/kms/v1/asymmetricsignature"
@@ -177,14 +178,18 @@ func newYcKmsClient(ctx context.Context, referenceStr string, opts ...grpc.DialO
 
 func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 	if iamToken := os.Getenv(EnvYcIAMToken); iamToken != "" {
-		// log.Printf("Using IAM Token from '%s' environment variable as credentials", EnvYcIAMToken)
+		log.Printf("Using IAM Token from '%s' environment variable as credentials", EnvYcIAMToken)
+
 		return ycsdk.NewIAMTokenCredentials(iamToken), nil
 	} else if oAuthToken := os.Getenv(EnvYcOAuthToken); oAuthToken != "" {
-		// log.Printf("Using OAuth Token from '%s' environment variable as credentials", EnvYcOAuthToken)
+		log.Printf("Using OAuth Token from '%s' environment variable as credentials", EnvYcOAuthToken)
+
 		return ycsdk.OAuthToken(oAuthToken), nil
 	} else if serviceAccountKeyFile := os.Getenv(EnvYcServiceAccountKeyFile); serviceAccountKeyFile != "" {
 		key, err := iamkey.ReadFromJSONFile(serviceAccountKeyFile)
-		// log.Printf("Using service account key file from '%s' environment variable as credentials", EnvYcServiceAccountKeyFile)
+
+		log.Printf("Using service account key file from '%s' environment variable as credentials", EnvYcServiceAccountKeyFile)
+
 		if err != nil {
 			return nil, fmt.Errorf("error reading service account key file: %w", err)
 		}
@@ -194,7 +199,8 @@ func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 		creds := ycsdk.InstanceServiceAccount()
 		// Try to connect Compute Instance Metadata Service
 		if _, err := creds.IAMToken(ctx); err == nil {
-			// log.Printf("Using compute instance service account token as credentials")
+			log.Printf("Using compute instance service account token as credentials")
+
 			return creds, nil
 		}
 	}
@@ -357,7 +363,8 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 	if !ok {
 		return nil, errors.New("failed to cast response to *asymkms.AsymmetricSignatureKey")
 	}
-	// log.Printf("generated yckms KEY_ID: '%s'", keyID)
+
+	log.Printf("generated yckms KEY_ID: '%s'", key.Id)
 	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{
 		KeyId: key.Id,
 	}

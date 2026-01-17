@@ -3,6 +3,7 @@ module github.com/fitzplsr/sigstore-kms-yckms
 go 1.25.6
 
 require (
+	github.com/davecgh/go-spew v1.1.1
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/sigstore/sigstore v1.10.3
 	github.com/yandex-cloud/go-genproto v0.44.0
