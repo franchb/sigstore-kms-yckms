@@ -1,0 +1,126 @@
+version: "3"
+
+vars:
+  TOOL_DIR: .tool
+  TMP_DIR: .tmp
+
+tasks:
+  binny:
+    internal: true
+    desc: Get the binny tool
+    generates:
+      - "{{ .TOOL_DIR }}/binny"
+    status:
+      - "test -f {{ .TOOL_DIR }}/binny"
+    cmd: "curl -sSfL https://raw.githubusercontent.com/anchore/binny/main/install.sh | sh -s -- -b .tool"
+    silent: true
+
+  tools:
+    desc: Install all tools needed for CI and local development
+    deps: [ binny ]
+    aliases:
+      - bootstrap
+    generates:
+      - ".binny.yaml"
+      - "{{ .TOOL_DIR }}/*"
+    status:
+      - "{{ .TOOL_DIR }}/binny check -v"
+    cmd: "{{ .TOOL_DIR }}/binny install -v"
+    silent: true
+
+  update-tools:
+    desc: Update pinned versions of all tools to their latest available versions
+    deps: [ binny ]
+    generates:
+      - ".binny.yaml"
+      - "{{ .TOOL_DIR }}/*"
+    cmd: "{{ .TOOL_DIR }}/binny update -v"
+    silent: true
+
+  list-tools:
+    desc: List all tools needed for CI and local development
+    deps: [ binny ]
+    cmd: "{{ .TOOL_DIR }}/binny list"
+    silent: true
+
+  check-ci:
+    desc: Runs all tests and stetic analysis, check no diff in git
+    deps: [tools]
+    cmds:
+      - task: lint
+      - task: verify-no-diff
+      - task: test
+      - task: verify-no-diff
+      - task: govulncheck
+      - echo "CI checks passed"
+
+  verify-no-diff:
+    desc: Check if no diff in git
+    cmds:
+      - "/bin/bash ci/scripts/diff.sh"
+
+  govulncheck:
+    desc: Check Go vulnerabilities
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/govulncheck ./..."
+
+
+  format:
+    desc: Auto-format all source code
+    deps: [ tools ]
+    cmds:
+      - gofmt -w -s .
+      - "{{ .TOOL_DIR }}/gosimports -local $(go list -m) -w ."
+      - go mod tidy
+
+  betteralign:
+    desc: Align Go structs in memory
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/betteralign -apply ./..."
+
+
+  lint-fix:
+    desc: Auto-format all source code + run golangci lint fixers
+    deps: [ tools ]
+    cmds:
+      - task: format
+      - task: betteralign
+      - "{{ .TOOL_DIR }}/golangci-lint run --tests=false --fix"
+
+  lint:
+    desc: Run gofmt + golangci lint checks
+    vars:
+      BAD_FMT_FILES:
+        sh: gofmt -l -s .
+      BAD_FILE_NAMES:
+        sh: "find . | grep -e ':' || true"
+    deps: [ tools ]
+    cmds:
+      # ensure there are no go fmt differences
+      - cmd: 'test -z "{{ .BAD_FMT_FILES }}" || (echo "files with gofmt issues: [{{ .BAD_FMT_FILES }}]"; exit 1)'
+        silent: true
+      # ensure there are no files with ":" in it (a known back case in the go ecosystem)
+      - cmd: 'test -z "{{ .BAD_FILE_NAMES }}" || (echo "files with bad names: [{{ .BAD_FILE_NAMES }}]"; exit 1)'
+        silent: true
+      # run linting
+      - "{{ .TOOL_DIR }}/golangci-lint run --tests=false"
+
+
+  test:
+    desc: Run all unit tests
+    deps: [tools, tmpdir]
+    vars:
+      # unit test coverage threshold (in % coverage)
+      COVERAGE_THRESHOLD: 0
+    cmds:
+      - "go test -coverprofile {{ .TMP_DIR }}/unit-coverage-details.txt ./..."
+      - cmd: "ci/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"
+        silent: true
+
+  tmpdir:
+    silent: true
+    generates:
+      - "{{ .TMP_DIR }}"
+    cmd: "mkdir -p {{ .TMP_DIR }}"

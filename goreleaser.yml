@@ -1,0 +1,25 @@
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+archives:
+  - format: binary
+    name_template: '{{ .Binary }}'
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{.Version}}_checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: '{{ .ProjectName }}_next'
+
+release:
+  github:
+    owner: fitzplsr
+    name: sigstore-kms-yckms
