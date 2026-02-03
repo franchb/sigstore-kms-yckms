@@ -20,38 +20,33 @@ func TestValidReference(t *testing.T) {
 	}{
 		{
 			name:    "valid with endpoint and key id",
-			ref:     "yckms://localhost/key-id-123",
+			ref:     "localhost/key-id-123",
 			wantErr: false,
 		},
 		{
 			name:    "valid without endpoint and with key id",
-			ref:     "yckms:///key-id-123",
+			ref:     "/key-id-123",
 			wantErr: false,
 		},
 		{
 			name:    "valid with folder and keyname",
-			ref:     "yckms://localhost/folder/folder-id-abc/keyname/my-key-name",
+			ref:     "localhost/folder/folder-id-abc/keyname/my-key-name",
 			wantErr: false,
 		},
 		{
 			name:    "valid without endpoint with folder and keyname",
-			ref:     "yckms:///folder/folder-id-abc/keyname/my-key-name",
+			ref:     "/folder/folder-id-abc/keyname/my-key-name",
 			wantErr: false,
 		},
 		{
-			name:    "invalid scheme",
-			ref:     "aws-kms://key-id-123",
-			wantErr: true,
-		},
-		{
 			name:    "invalid format missing key id",
-			ref:     "yckms://localhost/",
+			ref:     "localhost/",
 			wantErr: true,
 		},
 		{
-			name:    "invalid format just path",
+			name:    "valid format just path",
 			ref:     "/folder/id/keyname/name",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "invalid empty string",
@@ -60,7 +55,7 @@ func TestValidReference(t *testing.T) {
 		},
 		{
 			name:    "invalid folder format without keyname",
-			ref:     "yckms://localhost/folder/folder-id",
+			ref:     "localhost/folder/folder-id",
 			wantErr: true,
 		},
 	}
@@ -87,7 +82,7 @@ func TestParseReference(t *testing.T) {
 	}{
 		{
 			name:         "key id with endpoint",
-			ref:          "yckms://kms.yandexcloud.com/key-id-123",
+			ref:          "kms.yandexcloud.com/key-id-123",
 			wantEndpoint: "kms.yandexcloud.com",
 			wantKeyID:    "key-id-123",
 			wantFolderID: "",
@@ -96,7 +91,7 @@ func TestParseReference(t *testing.T) {
 		},
 		{
 			name:         "key id without endpoint",
-			ref:          "yckms:///key-id-456",
+			ref:          "/key-id-456",
 			wantEndpoint: "",
 			wantKeyID:    "key-id-456",
 			wantFolderID: "",
@@ -105,7 +100,7 @@ func TestParseReference(t *testing.T) {
 		},
 		{
 			name:         "folder and keyname with endpoint",
-			ref:          "yckms://localhost/folder/folder-abc-123/keyname/my-test-key",
+			ref:          "localhost/folder/folder-abc-123/keyname/my-test-key",
 			wantEndpoint: "localhost",
 			wantKeyID:    "",
 			wantFolderID: "folder-abc-123",
@@ -114,7 +109,7 @@ func TestParseReference(t *testing.T) {
 		},
 		{
 			name:         "folder and keyname without endpoint",
-			ref:          "yckms:///folder/another-folder/keyname/another-key",
+			ref:          "/folder/another-folder/keyname/another-key",
 			wantEndpoint: "",
 			wantKeyID:    "",
 			wantFolderID: "another-folder",
@@ -123,7 +118,7 @@ func TestParseReference(t *testing.T) {
 		},
 		{
 			name:    "invalid reference",
-			ref:     "yckms://localhost/folder/folder-id",
+			ref:     "localhost/folder/folder-id",
 			wantErr: true,
 		},
 	}
@@ -220,9 +215,8 @@ func TestLoadSignerVerifier_InvalidFormat(t *testing.T) {
 		ref  string
 	}{
 		{"empty string", ""},
-		{"missing scheme", "test-key-id"},
-		{"wrong scheme", "aws-kms://test-key-id"},
-		{"incomplete path", "yckms://localhost/folder/folder-id"},
+		{"missing endpoint", "test-key-id"},
+		{"incomplete path", "localhost/folder/folder-id"},
 	}
 
 	for _, tt := range tests {
@@ -400,7 +394,7 @@ func TestYcKmsClient_ReferenceParsing(t *testing.T) {
 	}{
 		{
 			name:        "simple key id",
-			ref:         "yckms://endpoint.example.com/key123",
+			ref:         "endpoint.example.com/key123",
 			expectError: false,
 			checkFields: func(e, k, f, kn string) bool {
 				return e == "endpoint.example.com" && k == "key123" && f == "" && kn == ""
@@ -408,7 +402,7 @@ func TestYcKmsClient_ReferenceParsing(t *testing.T) {
 		},
 		{
 			name:        "folder and keyname",
-			ref:         "yckms://kms.yandex.ru/folder/abc123/keyname/mykey",
+			ref:         "kms.yandex.ru/folder/abc123/keyname/mykey",
 			expectError: false,
 			checkFields: func(e, k, f, kn string) bool {
 				return e == "kms.yandex.ru" && k == "" && f == "abc123" && kn == "mykey"
@@ -416,7 +410,7 @@ func TestYcKmsClient_ReferenceParsing(t *testing.T) {
 		},
 		{
 			name:        "no endpoint simple key",
-			ref:         "yckms:///simple-key-id",
+			ref:         "/simple-key-id",
 			expectError: false,
 			checkFields: func(e, k, f, kn string) bool {
 				return e == "" && k == "simple-key-id" && f == "" && kn == ""
@@ -503,7 +497,7 @@ func TestErrorMessages(t *testing.T) {
 		},
 		{
 			name:    "incomplete folder path",
-			ref:     "yckms://localhost/folder/id",
+			ref:     "localhost/folder/id",
 			wantMsg: "yckms specification should be in the format",
 		},
 	}
