@@ -93,8 +93,8 @@ type ycSignatureKey struct {
 var (
 	errKMSReference = errors.New("kms specification should be in the format yckms://[ENDPOINT]/KEY_ID or yckms://[ENDPOINT]/folder/FOLDER_ID/keyname/KEY_NAME (ENDPOINT optional)")
 
-	createRE = regexp.MustCompile(`^yckms://([^/]*)/folder/([^/]+)/keyname/([^/]+)$`)
-	keyIdRE  = regexp.MustCompile(`^yckms://([^/]*)/([^/]+)$`)
+	createRE = regexp.MustCompile(`^([^/]*)/folder/([^/]+)/keyname/([^/]+)$`)
+	keyIdRE  = regexp.MustCompile(`^([^/]*)/([^/]+)$`)
 
 	allREs = []*regexp.Regexp{createRE, keyIdRE}
 )
