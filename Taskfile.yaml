@@ -43,6 +43,12 @@ tasks:
     cmd: "{{ .TOOL_DIR }}/binny list"
     silent: true
 
+  build:
+    desc: Build sigstore-kms-yckms CLI plugin
+    deps: [ tools ]
+    cmds:
+      - "go build -o {{ .TOOL_DIR }}/sigstore-kms-yckms ./cmd/sigstore-kms-yckms"
+
   check-ci:
     desc: Runs all tests and stetic analysis, check no diff in git
     deps: [tools]
