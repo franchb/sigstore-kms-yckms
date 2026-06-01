@@ -13,7 +13,7 @@
 
 # Code coverage profiles and other test artifacts
 *.out
-coverage.*
+/coverage.*
 *.coverprofile
 profile.cov
 
@@ -27,9 +27,12 @@ go.work.sum
 # env file
 .env
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# Editor/IDE and local tooling
+/.idea/
+/.vscode/
 /.tool/
 /.tmp/
-/.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db
