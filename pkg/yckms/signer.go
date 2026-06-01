@@ -55,13 +55,16 @@ func (y *SignerVerifier) SignMessage(message io.Reader, opts ...signature.SignOp
 	}
 
 	ctx := context.Background()
+
 	defaultHash, err := y.client.getHashFunc(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetch default hash function: %w", err)
 	}
 
 	var digest []byte
+
 	var signerOpts crypto.SignerOpts = defaultHash
+
 	for _, opt := range opts {
 		opt.ApplyContext(&ctx)
 		opt.ApplyDigest(&digest)

@@ -32,6 +32,7 @@ func ParseReference(reference string) (endpoint, keyID, folderID, keyName string
 	if matches := createReferenceRE.FindStringSubmatch(reference); matches != nil {
 		return matches[1], "", matches[2], matches[3], nil
 	}
+
 	if matches := keyIDReferenceRE.FindStringSubmatch(reference); matches != nil {
 		return matches[1], matches[2], "", "", nil
 	}

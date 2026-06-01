@@ -13,9 +13,11 @@ func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 	if iamToken := os.Getenv(EnvYcIAMToken); iamToken != "" {
 		return ycsdk.NewIAMTokenCredentials(iamToken), nil
 	}
+
 	if oauthToken := os.Getenv(EnvYcOAuthToken); oauthToken != "" {
 		return ycsdk.OAuthToken(oauthToken), nil
 	}
+
 	if serviceAccountKeyFile := os.Getenv(EnvYcServiceAccountKeyFile); serviceAccountKeyFile != "" {
 		key, err := iamkey.ReadFromJSONFile(serviceAccountKeyFile)
 		if err != nil {

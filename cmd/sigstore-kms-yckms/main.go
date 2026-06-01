@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,9 +14,10 @@ const expectedProtocolVersion = "v1"
 
 func main() {
 	if len(os.Args) < 2 {
-		handler.WriteErrorResponse(os.Stdout, fmt.Errorf("missing protocol version"))
+		handler.WriteErrorResponse(os.Stdout, errors.New("missing protocol version"))
 		os.Exit(1)
 	}
+
 	if protocolVersion := os.Args[1]; protocolVersion != expectedProtocolVersion {
 		handler.WriteErrorResponse(os.Stdout, fmt.Errorf("expected protocol version %s, got %s", expectedProtocolVersion, protocolVersion))
 		os.Exit(1)

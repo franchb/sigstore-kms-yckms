@@ -59,6 +59,7 @@ func newYcKmsClient(ctx context.Context, resourceID string, opts ...grpc.DialOpt
 	y := &ycKmsClient{refString: resourceID}
 
 	var err error
+
 	y.endpoint, y.keyID, y.folderID, y.keyName, err = ParseReference(resourceID)
 	if err != nil {
 		return nil, err
@@ -108,6 +109,7 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		if !ok {
 			return nil, errors.New("public key is not RSA")
 		}
+
 		signatureKey.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA256, nil)
 		signatureKey.HashFunc = crypto.SHA256
 	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
@@ -117,6 +119,7 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		if !ok {
 			return nil, errors.New("public key is not RSA")
 		}
+
 		signatureKey.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA384, nil)
 		signatureKey.HashFunc = crypto.SHA384
 	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
@@ -126,6 +129,7 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		if !ok {
 			return nil, errors.New("public key is not RSA")
 		}
+
 		signatureKey.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA512, nil)
 		signatureKey.HashFunc = crypto.SHA512
 	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256:
@@ -133,6 +137,7 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		if !ok {
 			return nil, errors.New("public key is not ECDSA")
 		}
+
 		signatureKey.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA256)
 		signatureKey.HashFunc = crypto.SHA256
 	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384:
@@ -140,6 +145,7 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		if !ok {
 			return nil, errors.New("public key is not ECDSA")
 		}
+
 		signatureKey.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA384)
 		signatureKey.HashFunc = crypto.SHA384
 	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512:
@@ -147,12 +153,14 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		if !ok {
 			return nil, errors.New("public key is not ECDSA")
 		}
+
 		signatureKey.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA512)
 		signatureKey.HashFunc = crypto.SHA512
 	case asymkms.AsymmetricSignatureAlgorithm_ASYMMETRIC_SIGNATURE_ALGORITHM_UNSPECIFIED,
 		asymkms.AsymmetricSignatureAlgorithm_ECDSA_SECP256_K1_SHA_256:
 		return nil, errors.New("unsupported algorithm specified by KMS")
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("initializing internal verifier: %w", err)
 	}
@@ -177,6 +185,7 @@ func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 			signatureKey, err := y.getYcSignatureKey(ctx)
 			if err != nil {
 				loaderErr = err
+
 				return nil
 			}
 
@@ -185,9 +194,11 @@ func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 	)
 
 	item := y.skCache.Get(cacheKey, ttlcache.WithLoader[string, ycSignatureKey](loader))
+
 	if loaderErr != nil {
 		return nil, loaderErr
 	}
+
 	if item == nil {
 		return nil, errors.New("signature key cache returned nil item")
 	}
@@ -218,9 +229,11 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 	if err != nil {
 		return nil, fmt.Errorf("yckms key create error: %w", err)
 	}
+
 	if err := op.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("yckms key create error: %w", err)
 	}
+
 	resp, err := op.Response()
 	if err != nil {
 		return nil, fmt.Errorf("yckms key create error: %w", err)
@@ -232,6 +245,7 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 	}
 
 	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.Id}
+
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
 	if err != nil {
 		return nil, err
