@@ -68,11 +68,8 @@ tasks:
   govulncheck:
     desc: Check Go vulnerabilities
     deps: [ tools ]
-    vars:
-      GO_VERSION:
-        sh: "awk '/^go / {print $2; exit}' go.mod"
     cmds:
-      - "GOTOOLCHAIN=go{{ .GO_VERSION }} go run golang.org/x/vuln/cmd/govulncheck@latest ./..."
+      - "{{ .TOOL_DIR }}/govulncheck ./..."
 
 
   format:
