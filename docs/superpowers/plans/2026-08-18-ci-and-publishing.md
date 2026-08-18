@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-18-ci-and-publishing-design.md`
 
+**Pre-verified before this plan was written.** These are measurements, not predictions:
+
+- The dependency upgrade builds and tests clean with zero source changes.
+- Every action SHA below was resolved from the GitHub API and confirmed to match its tag.
+- All ten `.github` files in this plan pass `actionlint` (exit 0) and `zizmor` (`No findings to report`) as literally written. Three of them required non-obvious fixes to get there — `default-days: 7`, `pull_request` over `pull_request_target`, and `cache: false` on the release build — each flagged inline where it appears.
+- `.goreleaser.yaml` passes `goreleaser check` and produces the six expected archives, with the inner binary named exactly `sigstore-kms-yckms`.
+- `task snapshot` requires `--skip=sign,sbom`; GoReleaser runs those stages in snapshot mode and fails without cosign and syft on `PATH`.
+- binny installs zizmor, actionlint and goreleaser successfully, including zizmor's Rust-triple asset names.
+- The strict linter baseline is ~51 findings under the pinned golangci-lint v2.12.2, broken down in Task 8.
+
 ## Global Constraints
 
 - `go.mod` MUST use `go 1.26.0` plus `toolchain go1.26.6`. Never a patch-level `go` directive — `pkg/yckms` is a published library and a patch directive taxes every consumer.
@@ -224,8 +234,10 @@ Append to the `tasks:` map:
     desc: Build a full release locally without publishing or signing
     deps: [ tools ]
     cmds:
-      - "{{ .TOOL_DIR }}/goreleaser release --snapshot --clean"
+      - "{{ .TOOL_DIR }}/goreleaser release --snapshot --clean --skip=sign,sbom"
 ```
+
+The `--skip=sign,sbom` flags are load-bearing and verified necessary: GoReleaser runs the `signs` and `sboms` stages in snapshot mode too, so without them the target fails with `exec: "cosign": executable file not found in $PATH` on any machine lacking cosign and syft. Signing and SBOM generation are exercised in CI, where `cosign-installer` and `download-syft` put both on `PATH`; the post-merge verification at the end of this plan is what confirms them.
 
 `validate-actions` references `.github/zizmor.yml`, created in Task 4. Until then it fails on the missing config file — that is expected and Task 4's verification covers it.
 
@@ -738,8 +750,8 @@ updates:
       time: "12:00"
       timezone: "UTC"
     cooldown:
-      default-days: 3
-      semver-major-days: 7
+      default-days: 7
+      semver-major-days: 14
 
   - package-ecosystem: "github-actions"
     commit-message:
@@ -751,12 +763,14 @@ updates:
       time: "12:00"
       timezone: "UTC"
     cooldown:
-      default-days: 3
+      default-days: 7
     groups:
       github-actions:
         patterns:
           - "*"
 ```
+
+⚠️ `default-days` MUST be at least 7. `embedded-clickhouse` uses 3, which zizmor's `dependabot-cooldown` audit reports as insufficient and would fail `task validate-actions`.
 
 ⚠️ The prefix MUST be `chore(deps)`. `embedded-clickhouse` uses `deps:`, which is **not** a valid conventional-commit type — with go-semantic-release live, every Dependabot merge would be unparseable and silently produce no release. Do not copy ec's value.
 
@@ -766,7 +780,7 @@ updates:
 name: PR Title
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
 
 permissions: {}
@@ -797,7 +811,7 @@ jobs:
             revert
 ```
 
-This uses `pull_request_target` because `pull_request` does not expose a token with `pull-requests` access for forked PRs. The job checks out **no code** and runs only the pinned action, so the elevated trigger carries no code-execution risk. Do not add a checkout step to this workflow.
+Use `pull_request`, **not** `pull_request_target`. zizmor's `dangerous-triggers` audit reports `pull_request_target` as an error regardless of how the job is written, which would fail `task validate-actions`. `pull_request` is also sufficient: the action reads the title straight from the event payload, so no elevated token is needed. The job deliberately checks out no code — do not add a checkout step.
 
 - [ ] **Step 3: Verify both files lint**
 
@@ -805,7 +819,7 @@ This uses `pull_request_target` because `pull_request` does not expose a token w
 task validate-actions
 ```
 
-Expected: clean. zizmor specifically checks `pull_request_target` workflows for dangerous checkouts; a finding here means a checkout step was added — remove it.
+Expected: `No findings to report` from zizmor and silence from actionlint. A `dangerous-triggers` error means the trigger was changed to `pull_request_target`; a `dependabot-cooldown` warning means `default-days` is below 7.
 
 - [ ] **Step 4: Commit**
 
@@ -888,6 +902,9 @@ signs:
     signature: ${artifact}.sigstore.json
 
 release:
+  github:
+    owner: franchb
+    name: sigstore-kms-yckms
   mode: append
   name_template: "v{{ .Version }}"
 
@@ -898,7 +915,8 @@ snapshot:
   version_template: '{{ .Version }}-next'
 ```
 
-Four deliberate choices, do not "improve" them:
+Five deliberate choices, do not "improve" them:
+- **`release.github.owner`/`name` are explicit.** Without them GoReleaser infers the repository from the git remote, and `goreleaser check` fails with `scm releases: no remote configured to list refs from` in a fresh worktree or remote-less clone.
 - **No `-X` version ldflags.** `cmd/sigstore-kms-yckms/main.go` rejects any `argv[1]` other than `v1`, so there is no `--version` path to stamp. An injected variable would be unreferenced and fight `gochecknoglobals` in PR 2.
 - **`binary: sigstore-kms-yckms`** is explicit and load-bearing. Sigstore plugin discovery resolves plugins by filename on `PATH`, so the file inside each archive must carry exactly this name.
 - **`release: mode: append`** — go-semantic-release creates the GitHub release first; GoReleaser adds assets to it rather than creating its own.
@@ -924,16 +942,19 @@ Expected: `1 configuration file(s) validated` with no errors. Deprecation warnin
 task snapshot
 ```
 
-Expected: exit 0. This exercises builds, archives, checksums, and SBOM generation. Signing is skipped in snapshot mode because there is no OIDC token — that is expected.
+Expected: `release succeeded`, exit 0. Takes roughly a minute — it compiles six targets. This exercises builds, archives and checksums. Signing and SBOM generation are skipped by the `--skip=sign,sbom` flags from Task 2; GoReleaser would otherwise run them in snapshot mode and fail on missing `cosign`/`syft` binaries.
 
 - [ ] **Step 5: Verify the artifact set and the binary name inside an archive**
 
 ```bash
-ls dist/*.tar.gz dist/*.zip dist/*checksums.txt dist/*.sbom.json 2>/dev/null
+ls dist/*.tar.gz dist/*.zip dist/*checksums.txt
 tar -tzf dist/sigstore-kms-yckms_*_linux_amd64.tar.gz
+unzip -l dist/sigstore-kms-yckms_*_windows_amd64.zip
 ```
 
-Expected: six archives (linux/darwin/windows × amd64/arm64, zip for the two Windows ones), one checksums file, and one SBOM per archive. The `tar -tzf` listing MUST include a top-level entry named exactly `sigstore-kms-yckms`, plus `LICENSE` and `README.md`. If the binary has any other name, fix `binary:` before continuing — this is the failure that breaks plugin discovery for every user.
+Expected: exactly six archives — `linux_amd64`, `linux_arm64`, `darwin_amd64`, `darwin_arm64` as `.tar.gz` and `windows_amd64`, `windows_arm64` as `.zip` — plus one checksums file. No `.sbom.json` files; those are CI-only.
+
+The `tar -tzf` listing MUST be exactly `LICENSE`, `README.md`, and a top-level entry named exactly `sigstore-kms-yckms`. The Windows zip listing MUST show `sigstore-kms-yckms.exe` — GoReleaser appends `.exe` automatically and that is correct. If the Unix binary has any other name, fix `binary:` before continuing: this is the failure that silently breaks plugin discovery for every user.
 
 - [ ] **Step 6: Verify the snapshot output did not dirty the tree**
 
@@ -1048,6 +1069,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -1079,13 +1101,15 @@ Three things that fail only at release time, in public, if changed:
 
 `concurrency: cancel-in-progress: false` is deliberate: cancelling a half-published release is worse than queueing.
 
+`cache: false` on `setup-go` in the `goreleaser` job is also required, not cosmetic: with caching on, zizmor's `cache-poisoning` audit reports an error, because a restored module cache feeds a job that publishes release artifacts. Release builds should resolve modules fresh anyway. The `setup-go` steps in `ci.yml` and `vuln.yml` keep caching — they publish nothing.
+
 - [ ] **Step 3: Verify the workflow lints**
 
 ```bash
 task validate-actions
 ```
 
-Expected: clean across all eight workflows.
+Expected: `No findings to report` from zizmor across all eight workflows, and silence from actionlint. Both were verified against the exact file contents in this plan.
 
 - [ ] **Step 4: Add a release-verification section to `README.md`**
 
@@ -2121,7 +2145,7 @@ BODY
 | 3 | `.tool/actionlint && make check-ci` | silent, then `CI checks passed` |
 | 4 | `task validate-actions && make check-ci` | zizmor+actionlint clean, `CI checks passed` |
 | 5 | `task validate-actions` | clean, no dangerous-checkout finding |
-| 6 | `task snapshot && tar -tzf dist/*linux_amd64.tar.gz` | 6 archives + SBOMs; inner binary named `sigstore-kms-yckms` |
+| 6 | `.tool/goreleaser check && task snapshot && tar -tzf dist/*linux_amd64.tar.gz` | config validated; 6 archives + checksums; inner binary named `sigstore-kms-yckms` |
 | 7 | `task validate-actions && make check-ci` | clean, `CI checks passed` |
 | 8 | `.tool/golangci-lint run ./...` | ~51 findings (intentionally red); `go test ./...` passes |
 | 9 | `go test ./pkg/yckms/ -run TestVerifierForAlgorithm -v` | 3 tests PASS; 0 `err113`/`cyclop` findings |
