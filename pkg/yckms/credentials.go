@@ -47,5 +47,6 @@ func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 		return creds, nil
 	}
 
-	return nil, fmt.Errorf("one of %s, %s, %s env variables must be set", EnvYcIAMToken, EnvYcOAuthToken, EnvYcServiceAccountKeyFile)
+	return nil, fmt.Errorf("%w: set one of %s, %s, %s",
+		ErrNoCredentials, EnvYcIAMToken, EnvYcOAuthToken, EnvYcServiceAccountKeyFile)
 }

@@ -18,7 +18,6 @@ package yckms
 import (
 	"context"
 	"crypto"
-	"errors"
 	"fmt"
 	"io"
 
@@ -53,15 +52,11 @@ const (
 	AlgorithmRSA4096SignPSSSHA512 = "rsa-4096-pss-sha512"
 )
 
-var (
-	errUninitializedSignerVerifier = errors.New("yckms signer verifier is not initialized")
-
-	ycSupportedHashFuncs = []crypto.Hash{
-		crypto.SHA256,
-		crypto.SHA512,
-		crypto.SHA384,
-	}
-)
+var ycSupportedHashFuncs = []crypto.Hash{
+	crypto.SHA256,
+	crypto.SHA512,
+	crypto.SHA384,
+}
 
 // SignerVerifier signs messages with Yandex Cloud KMS and verifies signatures locally.
 type SignerVerifier struct {
