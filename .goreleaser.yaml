@@ -1,0 +1,66 @@
+version: 2
+
+project_name: sigstore-kms-yckms
+
+env:
+  - CGO_ENABLED=0
+
+builds:
+  - id: sigstore-kms-yckms
+    main: ./cmd/sigstore-kms-yckms
+    binary: sigstore-kms-yckms
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: sigstore-kms-yckms
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    output: true
+    args:
+      - sign-blob
+      - --yes
+      - --bundle=${signature}
+      - ${artifact}
+    signature: ${artifact}.sigstore.json
+
+release:
+  github:
+    owner: franchb
+    name: sigstore-kms-yckms
+  mode: append
+  name_template: "v{{ .Version }}"
+
+changelog:
+  disable: true
+
+snapshot:
+  version_template: '{{ .Version }}-next'
