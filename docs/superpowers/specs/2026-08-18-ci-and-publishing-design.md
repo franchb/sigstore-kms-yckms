@@ -226,7 +226,9 @@ Renamed from `goreleaser.yml` to the conventional dotted name.
 - **Signs**: cosign `sign-blob` over the checksum file, keyless, `--yes --bundle=${signature}`,
   producing `${artifact}.sigstore.json`.
 - **SBOMs**: syft, `artifacts: archive`.
-- **Release**: `mode: append` — go-semantic-release has already created the GitHub release.
+- **Release**: `mode: append` — go-semantic-release has already created the GitHub release. The
+  `github.owner`/`github.name` fields are set explicitly rather than inferred from the git remote,
+  so `goreleaser check` works in a fresh worktree.
 - **Changelog**: `disable: true` — semantic-release owns release notes.
 
 ### `release.yml`
@@ -263,8 +265,11 @@ New entries in `.binny.yaml`: `zizmor`, `actionlint`, `goreleaser`.
 New `Taskfile.yaml` targets:
 
 - **`validate-actions`** — runs `actionlint` and `zizmor` against `.github/`.
-- **`snapshot`** — runs `goreleaser release --snapshot --clean`, exercising builds, archives,
-  checksums, and SBOM generation locally without publishing or signing.
+- **`snapshot`** — runs `goreleaser release --snapshot --clean --skip=sign,sbom`, exercising
+  builds, archives and checksums locally without publishing. The skip flags are required:
+  GoReleaser runs the `signs` and `sboms` stages in snapshot mode too, so the target otherwise
+  fails on a missing `cosign` binary. Signing and SBOM generation are exercised only in CI, where
+  `cosign-installer` and `download-syft` put both tools on `PATH`.
 
 `check-ci` gains `validate-actions` so workflow regressions are caught by the same gate as
 everything else.
@@ -281,8 +286,9 @@ everything else.
 
 ## Risks
 
-- **First real release is only fully exercised in production.** `task snapshot` covers builds and
-  SBOMs but not keyless signing or attestation, which need a real OIDC token. Mitigated by
+- **First real release is only fully exercised in production.** `task snapshot` covers builds,
+  archives and checksums, but neither SBOM generation nor keyless signing nor attestation — those
+  need cosign, syft and a real OIDC token, so they run for the first time in CI. Mitigated by
   verifying the first published release with `cosign verify-blob` and `gh attestation verify`
   before announcing it.
 - **Semantic-release fires on every merge to `main`.** A mis-typed `feat:` publishes a minor
