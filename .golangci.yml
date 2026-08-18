@@ -222,7 +222,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/golangci/golangci-lint
+        - github.com/franchb/sigstore-kms-yckms
   exclusions:
     generated: lax
     paths:

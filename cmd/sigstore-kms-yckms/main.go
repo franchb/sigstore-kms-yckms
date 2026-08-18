@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/fitzplsr/sigstore-kms-yckms/pkg/yckms"
+	"github.com/franchb/sigstore-kms-yckms/pkg/yckms"
 	"github.com/sigstore/sigstore/pkg/signature/kms/cliplugin/handler"
 )
 

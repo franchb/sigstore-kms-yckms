@@ -1,4 +1,4 @@
-module github.com/fitzplsr/sigstore-kms-yckms
+module github.com/franchb/sigstore-kms-yckms
 
 go 1.26.3
 
