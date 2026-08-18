@@ -73,12 +73,12 @@ func TestSupportedHashFuncs(t *testing.T) {
 	t.Parallel()
 
 	want := []crypto.Hash{crypto.SHA256, crypto.SHA512, crypto.SHA384}
-	if len(ycSupportedHashFuncs) != len(want) {
-		t.Fatalf("ycSupportedHashFuncs length = %d, want %d", len(ycSupportedHashFuncs), len(want))
+	if len(ycSupportedHashFuncs()) != len(want) {
+		t.Fatalf("ycSupportedHashFuncs length = %d, want %d", len(ycSupportedHashFuncs()), len(want))
 	}
 
 	for index, hashFunc := range want {
-		if got := ycSupportedHashFuncs[index]; got != hashFunc {
+		if got := ycSupportedHashFuncs()[index]; got != hashFunc {
 			t.Fatalf("ycSupportedHashFuncs[%d] = %v, want %v", index, got, hashFunc)
 		}
 	}

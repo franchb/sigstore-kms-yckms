@@ -34,19 +34,22 @@ import (
 
 const cacheKey = "sign_key"
 
-var algorithmMap = map[string]asymkms.AsymmetricSignatureAlgorithm{
-	AlgorithmECDSANISTP256SHA256:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256,
-	AlgorithmECDSANISTP384SHA384:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384,
-	AlgorithmECDSANISTP521SHA512:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512,
-	AlgorithmRSA2048SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
-	AlgorithmRSA2048SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
-	AlgorithmRSA2048SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
-	AlgorithmRSA3072SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
-	AlgorithmRSA3072SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
-	AlgorithmRSA3072SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
-	AlgorithmRSA4096SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256,
-	AlgorithmRSA4096SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384,
-	AlgorithmRSA4096SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512,
+// algorithmMap maps this package's algorithm names to Yandex Cloud KMS algorithms.
+func algorithmMap() map[string]asymkms.AsymmetricSignatureAlgorithm {
+	return map[string]asymkms.AsymmetricSignatureAlgorithm{
+		AlgorithmECDSANISTP256SHA256:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256,
+		AlgorithmECDSANISTP384SHA384:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384,
+		AlgorithmECDSANISTP521SHA512:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512,
+		AlgorithmRSA2048SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
+		AlgorithmRSA2048SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
+		AlgorithmRSA2048SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
+		AlgorithmRSA3072SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
+		AlgorithmRSA3072SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
+		AlgorithmRSA3072SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
+		AlgorithmRSA4096SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256,
+		AlgorithmRSA4096SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384,
+		AlgorithmRSA4096SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512,
+	}
 }
 
 type ycKmsClient struct {
@@ -196,6 +199,9 @@ func (y *ycKmsClient) getHashFunc(ctx context.Context) (crypto.Hash, error) {
 	return signatureKey.HashFunc, nil
 }
 
+// signatureKeyTTL bounds how long a fetched KMS signature key is cached.
+const signatureKeyTTL = 5 * time.Minute
+
 func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 	var loaderErr error
 
@@ -208,7 +214,7 @@ func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 				return nil
 			}
 
-			return cache.Set(key, *signatureKey, 5*time.Minute)
+			return cache.Set(key, *signatureKey, signatureKeyTTL)
 		},
 	)
 
@@ -232,7 +238,7 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 		return nil, ErrCreateKeyReference
 	}
 
-	signatureAlgorithm, ok := algorithmMap[algorithm]
+	signatureAlgorithm, ok := algorithmMap()[algorithm]
 	if !ok {
 		return nil, ErrUnknownAlgorithm
 	}
@@ -242,9 +248,14 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 		FolderId:           y.folderID,
 		Name:               y.keyName,
 		Description:        "Created by sigstore",
+		Labels:             nil,
+		DeletionProtection: false,
 	}
 
-	op, err := y.client.WrapOperation(y.client.KMSAsymmetricSignature().AsymmetricSignatureKey().Create(ctx, createKeyRequest))
+	createResponse, createErr := y.client.KMSAsymmetricSignature().
+		AsymmetricSignatureKey().Create(ctx, createKeyRequest)
+
+	op, err := y.client.WrapOperation(createResponse, createErr)
 	if err != nil {
 		return nil, fmt.Errorf("yckms key create error: %w", err)
 	}

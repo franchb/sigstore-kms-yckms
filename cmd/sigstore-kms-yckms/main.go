@@ -26,32 +26,46 @@ import (
 	"github.com/franchb/sigstore-kms-yckms/pkg/yckms"
 )
 
-const expectedProtocolVersion = "v1"
+const (
+	expectedProtocolVersion = "v1"
+
+	// minPluginArgs is the argv length required to carry a protocol version.
+	minPluginArgs = 2
+)
+
+var (
+	errMissingProtocolVersion  = errors.New("missing protocol version")
+	errExpectedProtocolVersion = errors.New("expected protocol version")
+)
 
 func main() {
-	if len(os.Args) < 2 {
-		handler.WriteErrorResponse(os.Stdout, errors.New("missing protocol version"))
-		os.Exit(1)
+	if len(os.Args) < minPluginArgs {
+		writeError(errMissingProtocolVersion)
 	}
 
 	if protocolVersion := os.Args[1]; protocolVersion != expectedProtocolVersion {
-		handler.WriteErrorResponse(os.Stdout, fmt.Errorf("expected protocol version %s, got %s", expectedProtocolVersion, protocolVersion))
-		os.Exit(1)
+		writeError(fmt.Errorf("%w %s, got %s", errExpectedProtocolVersion, expectedProtocolVersion, protocolVersion))
 	}
 
 	pluginArgs, err := handler.GetPluginArgs(os.Args)
 	if err != nil {
-		handler.WriteErrorResponse(os.Stdout, err)
-		os.Exit(1)
+		writeError(err)
 	}
 
 	signerVerifier, err := yckms.LoadSignerVerifier(context.Background(), pluginArgs.InitOptions.KeyResourceID)
 	if err != nil {
-		handler.WriteErrorResponse(os.Stdout, err)
-		os.Exit(1)
+		writeError(err)
 	}
 
 	if _, err := handler.Dispatch(os.Stdout, os.Stdin, pluginArgs, signerVerifier); err != nil {
 		os.Exit(1)
 	}
+}
+
+// writeError reports err over the plugin protocol on stdout and exits non-zero.
+// A failed write is unreportable — stdout is the only channel the protocol has.
+func writeError(err error) {
+	_ = handler.WriteErrorResponse(os.Stdout, err)
+
+	os.Exit(1)
 }

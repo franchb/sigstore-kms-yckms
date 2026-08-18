@@ -158,9 +158,11 @@ linters:
         - empty
         - stdlib
         - github.com/yandex-cloud/go-sdk.Credentials
+        - github.com/sigstore/sigstore/pkg/signature.Verifier
     testpackage:
       allow-packages:
         - yckms
+        - main
     depguard:
       rules:
         main:
@@ -178,7 +180,7 @@ linters:
         # Internal types built up field-by-field or relying on zero values.
         - '.*yckms\.ycKmsClient$'
         - '.*yckms\.SignerVerifier$'
-        - '.*ycsdk\.Config$'
+        - '.*go-sdk\.Config$'
     revive:
       rules:
         - name: exported

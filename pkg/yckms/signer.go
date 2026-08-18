@@ -52,10 +52,13 @@ const (
 	AlgorithmRSA4096SignPSSSHA512 = "rsa-4096-pss-sha512"
 )
 
-var ycSupportedHashFuncs = []crypto.Hash{
-	crypto.SHA256,
-	crypto.SHA512,
-	crypto.SHA384,
+// ycSupportedHashFuncs lists the digest algorithms Yandex Cloud KMS signing supports.
+func ycSupportedHashFuncs() []crypto.Hash {
+	return []crypto.Hash{
+		crypto.SHA256,
+		crypto.SHA512,
+		crypto.SHA384,
+	}
 }
 
 // SignerVerifier signs messages with Yandex Cloud KMS and verifies signatures locally.
@@ -98,7 +101,7 @@ func (y *SignerVerifier) SignMessage(message io.Reader, opts ...signature.SignOp
 
 	hashFunc := signerOpts.HashFunc()
 	if len(digest) == 0 {
-		digest, hashFunc, err = signature.ComputeDigestForSigning(message, hashFunc, ycSupportedHashFuncs, opts...)
+		digest, hashFunc, err = signature.ComputeDigestForSigning(message, hashFunc, ycSupportedHashFuncs(), opts...)
 		if err != nil {
 			return nil, fmt.Errorf("computing digest for signing: %w", err)
 		}
@@ -186,7 +189,10 @@ func (c cryptoSignerWrapper) Sign(_ io.Reader, digest []byte, opts crypto.Signer
 }
 
 // CryptoSigner returns a crypto.Signer adapter for APIs that use standard Go signing interfaces.
-func (y *SignerVerifier) CryptoSigner(ctx context.Context, errFunc func(error)) (crypto.Signer, crypto.SignerOpts, error) {
+func (y *SignerVerifier) CryptoSigner(
+	ctx context.Context,
+	errFunc func(error),
+) (crypto.Signer, crypto.SignerOpts, error) {
 	if y == nil || y.client == nil {
 		return nil, nil, errUninitializedSignerVerifier
 	}
@@ -206,8 +212,8 @@ func (y *SignerVerifier) CryptoSigner(ctx context.Context, errFunc func(error)) 
 
 // SupportedAlgorithms returns the Yandex Cloud KMS asymmetric signing algorithms supported by this package.
 func (*SignerVerifier) SupportedAlgorithms() []string {
-	result := make([]string, 0, len(algorithmMap))
-	for algorithm := range algorithmMap {
+	result := make([]string, 0, len(algorithmMap()))
+	for algorithm := range algorithmMap() {
 		result = append(result, algorithm)
 	}
 

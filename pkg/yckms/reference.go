@@ -46,7 +46,7 @@ func ValidReference(ref string) error {
 }
 
 // ParseReference parses a provider-stripped yckms resource ID into endpoint and key creation fields.
-func ParseReference(reference string) (endpoint, keyID, folderID, keyName string, err error) {
+func ParseReference(reference string) (string, string, string, string, error) {
 	if matches := createReferenceRE.FindStringSubmatch(reference); matches != nil {
 		return matches[1], "", matches[2], matches[3], nil
 	}
