@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//nolint:testpackage // credentials() is internal and needs direct coverage for fallback behavior.
 package yckms
 
 import (

@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//nolint:testpackage // internal tests cover unexported guard errors and client state without KMS calls.
 package yckms
 
 import (

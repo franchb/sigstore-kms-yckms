@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package yckms //nolint:testpackage // exercises unexported sentinels and verifierForAlgorithm
+package yckms
 
 import (
 	"crypto"

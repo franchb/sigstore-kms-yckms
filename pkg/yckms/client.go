@@ -263,7 +263,7 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 		return nil, errUnexpectedCreateKeyResponse
 	}
 
-	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.Id}
+	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.GetId()}
 
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
 	if err != nil {
@@ -302,7 +302,7 @@ func (y *ycKmsClient) sign(ctx context.Context, digest []byte, _ crypto.Hash) ([
 		return nil, fmt.Errorf("calling YC KMS AsymmetricSignatureCrypto.SignHash: %w", err)
 	}
 
-	return signResponse.Signature, nil
+	return signResponse.GetSignature(), nil
 }
 
 func (y *ycKmsClient) fetchPublicKey(ctx context.Context) (crypto.PublicKey, error) {
