@@ -130,3 +130,16 @@ tasks:
     generates:
       - "{{ .TMP_DIR }}"
     cmd: "mkdir -p {{ .TMP_DIR }}"
+
+  validate-actions:
+    desc: Lint GitHub Actions workflows for syntax and security issues
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/actionlint"
+      - "{{ .TOOL_DIR }}/zizmor --config .github/zizmor.yml .github"
+
+  snapshot:
+    desc: Build a full release locally without publishing or signing
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/goreleaser release --snapshot --clean --skip=sign,sbom"
