@@ -19,8 +19,3 @@ checksum:
 
 snapshot:
   name_template: '{{ .ProjectName }}_next'
-
-release:
-  github:
-    owner: fitzplsr
-    name: sigstore-kms-yckms
