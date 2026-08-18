@@ -54,6 +54,7 @@ tasks:
     deps: [tools]
     cmds:
       - task: lint
+      - task: validate-actions
       - task: verify-no-diff
       - task: test
       - task: verify-no-diff
