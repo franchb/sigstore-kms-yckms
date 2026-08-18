@@ -39,7 +39,12 @@ func credentials(ctx context.Context) (ycsdk.Credentials, error) {
 			return nil, fmt.Errorf("read service account key file from %s: %w", EnvYcServiceAccountKeyFile, err)
 		}
 
-		return ycsdk.ServiceAccountKey(key)
+		creds, err := ycsdk.ServiceAccountKey(key)
+		if err != nil {
+			return nil, fmt.Errorf("building service account key credentials: %w", err)
+		}
+
+		return creds, nil
 	}
 
 	creds := ycsdk.InstanceServiceAccount()

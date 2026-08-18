@@ -167,7 +167,7 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 
 	asymKey, err := y.client.KMSAsymmetricSignature().AsymmetricSignatureKey().Get(ctx, getRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching yckms signature key %q: %w", y.keyID, err)
 	}
 
 	pubKey, err := y.fetchPublicKey(ctx)
@@ -267,10 +267,15 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching public key for created yckms key: %w", err)
 	}
 
-	return cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	if err != nil {
+		return nil, fmt.Errorf("parsing PEM public key for created yckms key: %w", err)
+	}
+
+	return publicKey, nil
 }
 
 func (y *ycKmsClient) verify(ctx context.Context, sig, message io.Reader, opts ...signature.VerifyOption) error {
@@ -279,7 +284,11 @@ func (y *ycKmsClient) verify(ctx context.Context, sig, message io.Reader, opts .
 		return err
 	}
 
-	return signatureKey.Verifier.VerifySignature(sig, message, opts...)
+	if err := signatureKey.Verifier.VerifySignature(sig, message, opts...); err != nil {
+		return fmt.Errorf("verifying yckms signature: %w", err)
+	}
+
+	return nil
 }
 
 func (y *ycKmsClient) sign(ctx context.Context, digest []byte, _ crypto.Hash) ([]byte, error) {
@@ -301,8 +310,13 @@ func (y *ycKmsClient) fetchPublicKey(ctx context.Context) (crypto.PublicKey, err
 
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching yckms public key for key %q: %w", y.keyID, err)
 	}
 
-	return cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	if err != nil {
+		return nil, fmt.Errorf("parsing yckms PEM public key: %w", err)
+	}
+
+	return publicKey, nil
 }

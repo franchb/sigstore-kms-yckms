@@ -100,7 +100,7 @@ func (y *SignerVerifier) SignMessage(message io.Reader, opts ...signature.SignOp
 	if len(digest) == 0 {
 		digest, hashFunc, err = signature.ComputeDigestForSigning(message, hashFunc, ycSupportedHashFuncs, opts...)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("computing digest for signing: %w", err)
 		}
 	}
 
@@ -123,7 +123,12 @@ func (y *SignerVerifier) PublicKey(opts ...signature.PublicKeyOption) (crypto.Pu
 		return nil, err
 	}
 
-	return signatureKey.Verifier.PublicKey(opts...)
+	publicKey, err := signatureKey.Verifier.PublicKey(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("reading public key from internal verifier: %w", err)
+	}
+
+	return publicKey, nil
 }
 
 // VerifySignature verifies a signature against message using the KMS key's public key.
