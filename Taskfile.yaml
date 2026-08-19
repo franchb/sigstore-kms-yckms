@@ -73,6 +73,21 @@ tasks:
     cmds:
       - "{{ .TOOL_DIR }}/govulncheck ./..."
 
+  govulncheck-module:
+    desc: Fail on Go module-graph vulns except osv-scanner.toml ignores
+    deps: [ tools ]
+    cmds:
+      - "python3 -m unittest ci/scripts/govulncheck_module_test.py"
+      - cmd: "python3 ci/scripts/govulncheck_module.py"
+        env:
+          GOVULNCHECK: "{{ .TOOL_DIR }}/govulncheck"
+
+  osv-scanner:
+    desc: Scan go.mod/go.sum against OSV, GHSA, and MAL advisories
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/osv-scanner scan source --recursive ."
+
   fuzz:
     desc: Run native Go fuzz of ParseReference for 20s
     deps: [ tools ]
