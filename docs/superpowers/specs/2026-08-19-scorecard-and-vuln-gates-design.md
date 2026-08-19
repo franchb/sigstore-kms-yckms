@@ -53,8 +53,7 @@ three humans, enough for two required reviews (the author cannot be one of them)
 
 ```
 PR / push
-  ├─ CI tests (ubuntu) — today’s Check CI, renamed (lint, tests+coverage,
-  │    call-graph govulncheck, 20s fuzz, zizmor)
+  ├─ Check CI (lint, tests+coverage, call-graph govulncheck, 20s fuzz, zizmor)
   ├─ Test (macos/windows), Analyze (go) / CodeQL, Dependency Review
   ├─ new required: govulncheck (module)
   ├─ new required: OSV Scanner
@@ -70,7 +69,7 @@ bestpractices.dev (operator, this conversation)
 
 **In git:** CODEOWNERS, dual scanner jobs and ignore file, Go fuzz tests, ClusterFuzzLite
 config and workflows, coverage tests and threshold, SPDX headers, CONTRIBUTING.md,
-security-review note, job rename, README/repro notes.
+security-review note, README/repro notes.
 
 **Not in git:** the GitHub ruleset itself, 2FA on maintainer accounts, enabling Issues,
 the badge questionnaire. Those are operator steps in this spec.
@@ -88,7 +87,7 @@ lock `main`.
 | Vulnerabilities | 10 | `osv-scanner.toml` ignore for unused `openpgp` |
 | Fuzzing | 10 | In-tree `Fuzz*` (ClusterFuzzLite keeps them running) |
 | SAST | 10 | Already have CodeQL; 2 pre-CodeQL commits age out |
-| CI-Tests | 10 | Rename `Check CI` so the name contains `test`; PR #1 ages out |
+| CI-Tests | 10 | `Test (macos-latest)` and `Test (windows-latest)` already match Scorecard’s name heuristic. Score 7 is 3/4 merged PRs; PR #1 had no CI. The next PRs age that one out. Do **not** rename `Check CI` for this check. |
 | CII-Best-Practices | 10 | Gold badge |
 | Maintained | 0 until ~2026-11-12 | Leave the alert **open**. Do not dismiss. Revisit after 90 days. |
 
@@ -124,12 +123,12 @@ The author does not count as a reviewer. A PR from `@franchb` needs approvals fr
 - Require status checks, branch must be up to date
 - Linear history: **off**
 
-**Required checks** (exact job `name:` values; each must run on every `pull_request`):
+**Required checks** (exact check contexts GitHub already reports on PRs, plus the two new jobs; each must run on every `pull_request`):
 
-- `CI tests (ubuntu)` — today’s `Check CI`, renamed so Scorecard’s CI-Tests heuristic sees `test`
+- `Check CI` — ubuntu `make check-ci`. `release.yml` has a **different** job with this same display name; that job is push-to-main only and is not a PR required check. Leave `release.yml` alone (Non-Goals).
 - `Test (macos-latest)`
 - `Test (windows-latest)`
-- `Analyze (go)` — CodeQL matrix job; this is the check context GitHub already reports on PRs
+- `Analyze (go)` — CodeQL matrix job
 - `Dependency Review`
 - `Conventional commit title`
 - `govulncheck (module)`
@@ -172,7 +171,7 @@ GitHub rejects a field, not to weaken the rules):
       "parameters": {
         "strict_required_status_checks_policy": true,
         "required_status_checks": [
-          {"context": "CI tests (ubuntu)"},
+          {"context": "Check CI"},
           {"context": "Test (macos-latest)"},
           {"context": "Test (windows-latest)"},
           {"context": "Analyze (go)"},
@@ -190,6 +189,12 @@ GitHub rejects a field, not to weaken the rules):
 Confirm every `context` string against the git PR’s Checks tab **before** creating the
 ruleset (matrix jobs sometimes differ by punctuation). Do not guess after the ruleset is live.
 
+**Accepted cost:** `dismiss_stale_reviews_on_push` + `require_last_push_approval` +
+strict required checks + 2 approvals + empty bypass list means every new push (including
+Dependabot rebases) needs two humans again. Weekly Dependabot stays. Do **not** add a
+Dependabot bypass actor; Scorecard treats any bypass as “admins not enforced.” Dep PRs
+wait for `@franchb` plus one of the other two, or for both collaborators.
+
 ## Dual vuln gates
 
 Three scans. Two of them are required, visible PR jobs.
@@ -197,7 +202,7 @@ Three scans. Two of them are required, visible PR jobs.
 | Scan | Where | Blocks | Ignore |
 | --- | --- | --- | --- |
 | `govulncheck ./...` (call graph, default) | stays inside `make check-ci` | reachable Go vulns | none |
-| `govulncheck -scan=module` | new required job `govulncheck (module)` | any Go vuln in the module graph | wrapper (govulncheck cannot silence IDs; Go issue 61211) |
+| `govulncheck -C pkg/yckms -scan=module` (no package pattern) | new required job `govulncheck (module)` | any Go vuln in the module graph | wrapper (govulncheck cannot silence IDs; Go issue 61211) |
 | `osv-scanner scan source --recursive .` | new required job `OSV Scanner` | OSV + GHSA + **MAL-** on `go.mod`/`go.sum` | `osv-scanner.toml` (Scorecard reads this too) |
 
 **Single ignore list**, `osv-scanner.toml` next to `go.mod`:
@@ -212,12 +217,32 @@ New ignores need an `id` and a `reason`. No expiry on `GO-2026-5932`.
 
 **Module-scan wrapper** (`ci/scripts/govulncheck_module.py`):
 
-1. Run `govulncheck -scan=module -format json ./...` (JSON mode exits 0 even when findings exist).
-2. Parse streaming JSON findings. Drop IDs and aliases listed in `osv-scanner.toml` (stdlib
-   `tomllib`, Python 3.11+; Ubuntu latest is fine).
+Pinned `govulncheck` **v1.7.0** rejects package patterns in module mode
+(`patterns are not accepted for module only scanning`, exit 2). A patternless
+scan from the repository root also fails (`no Go files` — the module root is
+not a package). Invoke from a package directory with **no** pattern:
+
+```
+govulncheck -C pkg/yckms -scan=module -format json
+```
+
+`-C pkg/yckms` and `-C cmd/sigstore-kms-yckms` report the same module graph
+(verified: both exit 3 in text mode on `GO-2026-5932`). Use `pkg/yckms`.
+JSON mode exits 0 even when findings exist; findings are streaming objects
+with `finding.osv` (e.g. `"GO-2026-5932"`).
+
+Then:
+
+1. Parse the streaming JSON. Collect each `finding.osv`.
+2. Drop IDs (and aliases, if the finding lists them) that have an
+   `[[IgnoredVulns]]` entry in `osv-scanner.toml` whose `ignoreUntil` is
+   **absent or strictly in the future** (UTC date). An expired
+   `ignoreUntil` must **not** suppress the finding — same rule osv-scanner
+   uses, so the two required gates cannot diverge on that file.
+   Parse the toml with stdlib `tomllib` (Python 3.11+; Ubuntu latest is fine).
 3. Exit 1 if any finding remains.
-4. Non-zero govulncheck process errors, empty/invalid JSON, or a missing `osv-scanner.toml`
-   are hard fails, not skips.
+4. Non-zero govulncheck process errors, empty/invalid JSON, or a missing
+   `osv-scanner.toml` are hard fails, not skips.
 
 **Wiring**
 
@@ -262,14 +287,19 @@ Do not fuzz `credentials()` (network / instance metadata).
 | File | Role |
 | --- | --- |
 | `project.yaml` | `language: go` |
-| `Dockerfile` | `FROM gcr.io/oss-fuzz-base/base-builder-go`, copy the repo, `GOTOOLCHAIN=auto` so `go.mod`’s `toolchain go1.26.6` is honored |
+| `Dockerfile` | `FROM gcr.io/oss-fuzz-base/base-builder-go@sha256:<digest>` — **digest-pin**, not the floating tag. Scorecard Pinned-Dependencies inspects Dockerfiles; an unpinned `FROM` is a new Medium alert this repo does not have today. Copy the repo. `GOTOOLCHAIN=auto` so `go.mod`’s `toolchain go1.26.6` is honored. Resolve the digest at implementation time (`crane digest` / `docker buildx imagetools`). |
 | `build.sh` | `compile_native_go_fuzzer github.com/franchb/sigstore-kms-yckms/pkg/yckms FuzzParseReference fuzz_parse_reference` |
 
+Add a Dependabot `docker` ecosystem with `directory: "/.clusterfuzzlite"`,
+`commit-message.prefix: chore(deps)`, weekly Monday, 7-day cooldown, so the
+digest does not rot.
+
 **Workflows** (SHA-pin `google/clusterfuzzlite/actions/build_fuzzers` and `run_fuzzers` to a
-commit; never `@v1`. `permissions: {}` at workflow level. Harden-runner like the rest,
-unless it blocks CFL’s Docker builder — in that case omit harden-runner on the two CFL
-workflows only and say so in the workflow comment. SARIF upload needs job-level
-`security-events: write`. ASan only.):
+commit; never `@v1`. `permissions: {}` at workflow level. Each CFL job sets
+`contents: read` (the actions check out the repo) and `security-events: write`
+(SARIF). Harden-runner like the rest, unless it blocks CFL’s Docker builder —
+in that case omit harden-runner on the two CFL workflows only and say so in the
+workflow comment. ASan only.):
 
 | File | When | Mode | Duration | Required? |
 | --- | --- | --- | --- | --- |
@@ -367,10 +397,13 @@ Git work is not done until:
 - `make check-ci` is green, including **≥90%** statement coverage and the 20s
   `FuzzParseReference` run.
 - `make govulncheck-module` is green with only `GO-2026-5932` ignored; **removing** that
-  ignore must fail.
+  ignore must fail. The task must invoke
+  `govulncheck -C pkg/yckms -scan=module` **without** a package pattern
+  (`./...` exits 2 on v1.7.0).
 - `make osv-scanner` is green.
 - Native `FuzzParseReference` exists in `pkg/yckms`.
-- New CI job names match the required-check list.
+- New CI job names match the required-check list (`Check CI` stays).
+- `.clusterfuzzlite/Dockerfile` uses `FROM ...@sha256:...`, not a floating tag.
 - `task validate-actions` (actionlint + zizmor) is green, including SHA-pinned CFL actions.
 
 After merge:
