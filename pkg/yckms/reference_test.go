@@ -52,3 +52,36 @@ func TestValidReferenceRejectsFullScheme(t *testing.T) {
 		t.Fatal("ValidReference() accepted full yckms scheme; provider registration must strip it first")
 	}
 }
+
+func TestParseReferenceRejectsMalformed(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		"",
+		"only-one-segment",
+		"/folder/x/keyname/y/extra",
+		"host/folder/only",
+	}
+	for _, ref := range cases {
+		if _, _, _, _, err := ParseReference(ref); err == nil {
+			t.Fatalf("ParseReference(%q) succeeded", ref)
+		}
+
+		if err := ValidReference(ref); err == nil {
+			t.Fatalf("ValidReference(%q) succeeded", ref)
+		}
+	}
+}
+
+func TestParseReferenceEmptyEndpointKeyID(t *testing.T) {
+	t.Parallel()
+
+	endpoint, keyID, folderID, keyName, err := ParseReference("/abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if endpoint != "" || keyID != "abc" || folderID != "" || keyName != "" {
+		t.Fatalf("got %q %q %q %q", endpoint, keyID, folderID, keyName)
+	}
+}
