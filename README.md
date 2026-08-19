@@ -49,6 +49,19 @@ gh attestation verify sigstore-kms-yckms_<version>_linux_amd64.tar.gz \
 
 Each archive also ships a [syft](https://github.com/anchore/syft) SBOM alongside it.
 
+## Reproducing a release archive locally
+
+Release binaries are built with `CGO_ENABLED=0` and `-trimpath` (see
+`.goreleaser.yaml`). A snapshot of the same six platform archives, without
+publishing or signing:
+
+```sh
+task snapshot
+```
+
+Artifacts land in `dist/`. Checksums in a snapshot are not release-signed;
+use the Verifying releases commands on a published GitHub Release.
+
 ## Acknowledgements
 
 This project is a fork of [`fitzplsr/sigstore-kms-yckms`](https://github.com/fitzplsr/sigstore-kms-yckms),

@@ -20,6 +20,18 @@ This project is a Yandex Cloud KMS provider for Sigstore. Vulnerabilities in the
 Yandex Cloud KMS service itself should be reported to Yandex Cloud; vulnerabilities
 in Sigstore libraries should be reported to the [Sigstore project](https://github.com/sigstore/sigstore/security).
 
+## Security review (2026-08)
+
+Reviewed 2026-08 as part of OpenSSF Best Practices gold work.
+
+Trust boundary: this repository's plugin and `pkg/yckms` handling of
+`yckms://` resource IDs and Yandex Cloud credentials (`YC_IAM_TOKEN`,
+`YC_OAUTH_TOKEN`, `YC_SERVICE_ACCOUNT_KEY_FILE`). The plugin is a local
+CLI helper; it is not a network server.
+
+Out of scope for this review (report upstream): Yandex Cloud KMS itself,
+and Sigstore libraries (`github.com/sigstore/sigstore`). See Scope above.
+
 ## Release Verification
 
 Release artifacts are signed with [cosign](https://github.com/sigstore/cosign)
