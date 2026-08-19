@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    commit-message:
+      prefix: "chore(deps)"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "12:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+
+  - package-ecosystem: "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "12:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"

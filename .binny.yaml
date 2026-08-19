@@ -1,14 +1,14 @@
 tools:
   - name: binny
     version:
-      want: v0.13.1
+      want: v0.13.2
     method: github-release
     with:
       repo: anchore/binny
 
   - name: task
     version:
-      want: v3.51.1
+      want: v3.53.1
     method: github-release
     with:
       repo: go-task/task
@@ -22,7 +22,7 @@ tools:
 
   - name: govulncheck
     version:
-      want: v1.3.0
+      want: v1.7.0
       method: go-proxy
       with:
         module: golang.org/x/vuln
@@ -34,7 +34,7 @@ tools:
 
   - name: betteralign
     version:
-      want: v0.11.0
+      want: v0.14.4
       method: go-proxy
       with:
         module: github.com/dkorunic/betteralign
@@ -50,3 +50,24 @@ tools:
     method: github-release
     with:
       repo: rinchsan/gosimports
+
+  - name: goreleaser
+    version:
+      want: v2.17.1
+    method: github-release
+    with:
+      repo: goreleaser/goreleaser
+
+  - name: actionlint
+    version:
+      want: v1.7.12
+    method: github-release
+    with:
+      repo: rhysd/actionlint
+
+  - name: zizmor
+    version:
+      want: v1.29.0
+    method: github-release
+    with:
+      repo: zizmorcore/zizmor

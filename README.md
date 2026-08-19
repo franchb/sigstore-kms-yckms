@@ -23,6 +23,32 @@ Or use the signer as a library:
 import "github.com/franchb/sigstore-kms-yckms/pkg/yckms"
 ```
 
+## Verifying releases
+
+Release archives carry a keyless [cosign](https://github.com/sigstore/cosign)
+signature over the checksum file, plus SLSA build provenance.
+
+Verify the checksums:
+
+```sh
+cosign verify-blob \
+  --bundle sigstore-kms-yckms_<version>_checksums.txt.sigstore.json \
+  --certificate-identity 'https://github.com/franchb/sigstore-kms-yckms/.github/workflows/release.yml@refs/heads/main' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  sigstore-kms-yckms_<version>_checksums.txt
+```
+
+Then verify an archive against those checksums, and its build provenance:
+
+```sh
+sha256sum --check --ignore-missing sigstore-kms-yckms_<version>_checksums.txt
+gh attestation verify sigstore-kms-yckms_<version>_linux_amd64.tar.gz \
+  --repo franchb/sigstore-kms-yckms \
+  --signer-workflow franchb/sigstore-kms-yckms/.github/workflows/release.yml
+```
+
+Each archive also ships a [syft](https://github.com/anchore/syft) SBOM alongside it.
+
 ## Acknowledgements
 
 This project is a fork of [`fitzplsr/sigstore-kms-yckms`](https://github.com/fitzplsr/sigstore-kms-yckms),

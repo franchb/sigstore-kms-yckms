@@ -21,8 +21,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/franchb/sigstore-kms-yckms/pkg/yckms"
 	"github.com/sigstore/sigstore/pkg/signature/kms/cliplugin/handler"
+
+	"github.com/franchb/sigstore-kms-yckms/pkg/yckms"
 )
 
 const expectedProtocolVersion = "v1"
