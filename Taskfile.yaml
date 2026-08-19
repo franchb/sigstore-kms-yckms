@@ -57,6 +57,7 @@ tasks:
       - task: validate-actions
       - task: verify-no-diff
       - task: test
+      - task: fuzz
       - task: verify-no-diff
       - task: govulncheck
       - echo "CI checks passed"
@@ -72,6 +73,11 @@ tasks:
     cmds:
       - "{{ .TOOL_DIR }}/govulncheck ./..."
 
+  fuzz:
+    desc: Run native Go fuzz of ParseReference for 20s
+    deps: [ tools ]
+    cmds:
+      - "go test ./pkg/yckms -fuzz=FuzzParseReference -fuzztime=20s"
 
   format:
     desc: Auto-format all source code
