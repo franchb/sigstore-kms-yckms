@@ -54,8 +54,105 @@ func algorithmMap() map[string]asymkms.AsymmetricSignatureAlgorithm {
 	}
 }
 
+type kmsBackend interface {
+	getKey(ctx context.Context, keyID string) (*asymkms.AsymmetricSignatureKey, error)
+	getPublicKeyPEM(ctx context.Context, keyID string) (string, error)
+	signHash(ctx context.Context, keyID string, digest []byte) ([]byte, error)
+	createKey(
+		ctx context.Context,
+		folderID, name string,
+		alg asymkms.AsymmetricSignatureAlgorithm,
+	) (keyID, publicKeyPEM string, err error)
+}
+
+type sdkBackend struct {
+	sdk *ycsdk.SDK
+}
+
+func (s sdkBackend) getKey(ctx context.Context, keyID string) (*asymkms.AsymmetricSignatureKey, error) {
+	getRequest := &asymkms.GetAsymmetricSignatureKeyRequest{KeyId: keyID}
+
+	asymKey, err := s.sdk.KMSAsymmetricSignature().AsymmetricSignatureKey().Get(ctx, getRequest)
+	if err != nil {
+		return nil, fmt.Errorf("fetching yckms signature key %q: %w", keyID, err)
+	}
+
+	return asymKey, nil
+}
+
+func (s sdkBackend) getPublicKeyPEM(ctx context.Context, keyID string) (string, error) {
+	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: keyID}
+
+	pubKey, err := s.sdk.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
+	if err != nil {
+		return "", fmt.Errorf("fetching yckms public key for key %q: %w", keyID, err)
+	}
+
+	return pubKey.GetPublicKey(), nil
+}
+
+func (s sdkBackend) signHash(ctx context.Context, keyID string, digest []byte) ([]byte, error) {
+	signHashRequest := &asymkms.AsymmetricSignHashRequest{
+		KeyId: keyID,
+		Hash:  digest,
+	}
+
+	signResponse, err := s.sdk.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().SignHash(ctx, signHashRequest)
+	if err != nil {
+		return nil, fmt.Errorf("calling YC KMS AsymmetricSignatureCrypto.SignHash: %w", err)
+	}
+
+	return signResponse.GetSignature(), nil
+}
+
+func (s sdkBackend) createKey(
+	ctx context.Context,
+	folderID, name string,
+	alg asymkms.AsymmetricSignatureAlgorithm,
+) (string, string, error) {
+	createKeyRequest := &asymkms.CreateAsymmetricSignatureKeyRequest{
+		SignatureAlgorithm: alg,
+		FolderId:           folderID,
+		Name:               name,
+		Description:        "Created by sigstore",
+		Labels:             nil,
+		DeletionProtection: false,
+	}
+
+	createResponse, createErr := s.sdk.KMSAsymmetricSignature().
+		AsymmetricSignatureKey().Create(ctx, createKeyRequest)
+
+	op, err := s.sdk.WrapOperation(createResponse, createErr)
+	if err != nil {
+		return "", "", fmt.Errorf("yckms key create error: %w", err)
+	}
+
+	if err := op.Wait(ctx); err != nil {
+		return "", "", fmt.Errorf("yckms key create error: %w", err)
+	}
+
+	resp, err := op.Response()
+	if err != nil {
+		return "", "", fmt.Errorf("yckms key create error: %w", err)
+	}
+
+	key, ok := resp.(*asymkms.AsymmetricSignatureKey)
+	if !ok {
+		return "", "", errUnexpectedCreateKeyResponse
+	}
+
+	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.GetId()}
+
+	pubKey, err := s.sdk.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
+	if err != nil {
+		return "", "", fmt.Errorf("fetching public key for created yckms key: %w", err)
+	}
+
+	return key.GetId(), pubKey.GetPublicKey(), nil
+}
+
 type ycKmsClient struct {
-	client    *ycsdk.SDK
+	backend   kmsBackend
 	skCache   *ttlcache.Cache[string, ycSignatureKey]
 	endpoint  string
 	refString string
@@ -94,10 +191,12 @@ func newYcKmsClient(ctx context.Context, resourceID string, opts ...grpc.DialOpt
 		conf.Endpoint = y.endpoint
 	}
 
-	y.client, err = ycsdk.Build(ctx, conf, opts...)
+	sdk, err := ycsdk.Build(ctx, conf, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new yc kms client: %w", err)
 	}
+
+	y.backend = sdkBackend{sdk: sdk}
 
 	y.skCache = ttlcache.New[string, ycSignatureKey](
 		ttlcache.WithDisableTouchOnHit[string, ycSignatureKey](),
@@ -168,11 +267,9 @@ func ecdsaVerifier(pubKey crypto.PublicKey, hashFunc crypto.Hash) (signature.Ver
 }
 
 func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, error) {
-	getRequest := &asymkms.GetAsymmetricSignatureKeyRequest{KeyId: y.keyID}
-
-	asymKey, err := y.client.KMSAsymmetricSignature().AsymmetricSignatureKey().Get(ctx, getRequest)
+	asymKey, err := y.backend.getKey(ctx, y.keyID)
 	if err != nil {
-		return nil, fmt.Errorf("fetching yckms signature key %q: %w", y.keyID, err)
+		return nil, err
 	}
 
 	pubKey, err := y.fetchPublicKey(ctx)
@@ -245,45 +342,12 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 		return nil, ErrUnknownAlgorithm
 	}
 
-	createKeyRequest := &asymkms.CreateAsymmetricSignatureKeyRequest{
-		SignatureAlgorithm: signatureAlgorithm,
-		FolderId:           y.folderID,
-		Name:               y.keyName,
-		Description:        "Created by sigstore",
-		Labels:             nil,
-		DeletionProtection: false,
-	}
-
-	createResponse, createErr := y.client.KMSAsymmetricSignature().
-		AsymmetricSignatureKey().Create(ctx, createKeyRequest)
-
-	op, err := y.client.WrapOperation(createResponse, createErr)
+	_, publicKeyPEM, err := y.backend.createKey(ctx, y.folderID, y.keyName, signatureAlgorithm)
 	if err != nil {
-		return nil, fmt.Errorf("yckms key create error: %w", err)
+		return nil, err
 	}
 
-	if err := op.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("yckms key create error: %w", err)
-	}
-
-	resp, err := op.Response()
-	if err != nil {
-		return nil, fmt.Errorf("yckms key create error: %w", err)
-	}
-
-	key, ok := resp.(*asymkms.AsymmetricSignatureKey)
-	if !ok {
-		return nil, errUnexpectedCreateKeyResponse
-	}
-
-	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.GetId()}
-
-	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
-	if err != nil {
-		return nil, fmt.Errorf("fetching public key for created yckms key: %w", err)
-	}
-
-	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(publicKeyPEM))
 	if err != nil {
 		return nil, fmt.Errorf("parsing PEM public key for created yckms key: %w", err)
 	}
@@ -305,28 +369,16 @@ func (y *ycKmsClient) verify(ctx context.Context, sig, message io.Reader, opts .
 }
 
 func (y *ycKmsClient) sign(ctx context.Context, digest []byte, _ crypto.Hash) ([]byte, error) {
-	signHashRequest := &asymkms.AsymmetricSignHashRequest{
-		KeyId: y.keyID,
-		Hash:  digest,
-	}
-
-	signResponse, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().SignHash(ctx, signHashRequest)
-	if err != nil {
-		return nil, fmt.Errorf("calling YC KMS AsymmetricSignatureCrypto.SignHash: %w", err)
-	}
-
-	return signResponse.GetSignature(), nil
+	return y.backend.signHash(ctx, y.keyID, digest)
 }
 
 func (y *ycKmsClient) fetchPublicKey(ctx context.Context) (crypto.PublicKey, error) {
-	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: y.keyID}
-
-	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
+	pemStr, err := y.backend.getPublicKeyPEM(ctx, y.keyID)
 	if err != nil {
-		return nil, fmt.Errorf("fetching yckms public key for key %q: %w", y.keyID, err)
+		return nil, err
 	}
 
-	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pemStr))
 	if err != nil {
 		return nil, fmt.Errorf("parsing yckms PEM public key: %w", err)
 	}
