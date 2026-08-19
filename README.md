@@ -33,7 +33,7 @@ Verify the checksums:
 ```sh
 cosign verify-blob \
   --bundle sigstore-kms-yckms_<version>_checksums.txt.sigstore.json \
-  --certificate-identity-regexp 'https://github.com/franchb/sigstore-kms-yckms/.*' \
+  --certificate-identity 'https://github.com/franchb/sigstore-kms-yckms/.github/workflows/release.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   sigstore-kms-yckms_<version>_checksums.txt
 ```
@@ -43,7 +43,8 @@ Then verify an archive against those checksums, and its build provenance:
 ```sh
 sha256sum --check --ignore-missing sigstore-kms-yckms_<version>_checksums.txt
 gh attestation verify sigstore-kms-yckms_<version>_linux_amd64.tar.gz \
-  --repo franchb/sigstore-kms-yckms
+  --repo franchb/sigstore-kms-yckms \
+  --signer-workflow franchb/sigstore-kms-yckms/.github/workflows/release.yml
 ```
 
 Each archive also ships a [syft](https://github.com/anchore/syft) SBOM alongside it.
