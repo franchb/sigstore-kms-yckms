@@ -56,7 +56,6 @@ release:
   github:
     owner: franchb
     name: sigstore-kms-yckms
-  mode: append
   name_template: "v{{ .Version }}"
 
 changelog:
