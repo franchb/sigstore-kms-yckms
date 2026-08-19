@@ -141,7 +141,7 @@ tasks:
     deps: [tools, tmpdir]
     vars:
       # unit test coverage threshold (in % coverage)
-      COVERAGE_THRESHOLD: 0
+      COVERAGE_THRESHOLD: 90
     cmds:
       - "go test -coverprofile {{ .TMP_DIR }}/unit-coverage-details.txt ./..."
       - cmd: "ci/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"

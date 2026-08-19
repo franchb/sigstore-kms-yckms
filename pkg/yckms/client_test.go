@@ -30,16 +30,29 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
+	"github.com/sigstore/sigstore/pkg/signature"
+	"github.com/sigstore/sigstore/pkg/signature/options"
 	asymkms "github.com/yandex-cloud/go-genproto/yandex/cloud/kms/v1/asymmetricsignature"
+	ycsdk "github.com/yandex-cloud/go-sdk"
+	"google.golang.org/grpc"
 )
 
 const testKeyResourceID = "/key-1"
 
-var errFakeBackendGetKey = errors.New("kms down")
+var (
+	errFakeBackendGetKey = errors.New("kms down")
+	errFakeBackendPubKey = errors.New("public key unavailable")
+	errFakeBackendCreate = errors.New("create failed")
+	errFakeDial          = errors.New("dial blocked")
+	errFakeVerifierPub   = errors.New("verifier public key")
+)
 
 type fakeBackend struct {
 	priv      *ecdsa.PrivateKey
@@ -48,9 +61,24 @@ type fakeBackend struct {
 	createID  string
 	createPEM string
 	getKeyErr error
+	pubErr    error
 	signErr   error
 	createErr error
 	alg       asymkms.AsymmetricSignatureAlgorithm
+}
+
+type stubVerifier struct {
+	pub    crypto.PublicKey
+	pubErr error
+	sigErr error
+}
+
+func (s stubVerifier) PublicKey(...signature.PublicKeyOption) (crypto.PublicKey, error) {
+	return s.pub, s.pubErr
+}
+
+func (s stubVerifier) VerifySignature(io.Reader, io.Reader, ...signature.VerifyOption) error {
+	return s.sigErr
 }
 
 func (f *fakeBackend) getKey(context.Context, string) (*asymkms.AsymmetricSignatureKey, error) {
@@ -72,6 +100,10 @@ func (f *fakeBackend) getKey(context.Context, string) (*asymkms.AsymmetricSignat
 }
 
 func (f *fakeBackend) getPublicKeyPEM(context.Context, string) (string, error) {
+	if f.pubErr != nil {
+		return "", f.pubErr
+	}
+
 	return f.pem, nil
 }
 
@@ -150,6 +182,7 @@ func ecdsaFake(t *testing.T) *fakeBackend {
 		createID:  "",
 		createPEM: "",
 		getKeyErr: nil,
+		pubErr:    nil,
 		signErr:   nil,
 		createErr: nil,
 		alg:       asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256,
@@ -364,5 +397,249 @@ func TestRSAHashVariants(t *testing.T) {
 
 	if hashFunc != crypto.SHA512 {
 		t.Fatalf("hash = %v, want SHA512", hashFunc)
+	}
+}
+
+func TestPublicKeyBackendPublicKeyError(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.pubErr = errFakeBackendPubKey
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	if _, err := sv.PublicKey(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPublicKeyInvalidPEM(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.pem = "not-a-pem"
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	if _, err := sv.PublicKey(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPublicKeyUnsupportedAlgorithm(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.alg = asymkms.AsymmetricSignatureAlgorithm_ECDSA_SECP256_K1_SHA_256
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	if _, err := sv.PublicKey(); !errors.Is(err, ErrUnsupportedAlgorithm) {
+		t.Fatalf("error = %v, want ErrUnsupportedAlgorithm", err)
+	}
+}
+
+func TestCreateKeyBackendError(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.createErr = errFakeBackendCreate
+	sv := &SignerVerifier{client: newTestClient(t, fake, "host/folder/folder-1/keyname/k")}
+
+	if _, err := sv.CreateKey(t.Context(), AlgorithmECDSANISTP256SHA256); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestCreateKeyInvalidPEM(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.createID = "new-key"
+	fake.createPEM = "not-a-pem"
+	sv := &SignerVerifier{client: newTestClient(t, fake, "host/folder/folder-1/keyname/k")}
+
+	if _, err := sv.CreateKey(t.Context(), AlgorithmECDSANISTP256SHA256); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestVerifySignatureBackendError(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.getKeyErr = errFakeBackendGetKey
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	err := sv.VerifySignature(bytes.NewReader(nil), bytes.NewReader(nil), options.WithContext(t.Context()))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestVerifySignatureRejectsBadMessage(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+	message := []byte("hello-yckms")
+
+	sig, err := sv.SignMessage(bytes.NewReader(message))
+	if err != nil {
+		t.Fatalf("SignMessage: %v", err)
+	}
+
+	if err := sv.VerifySignature(bytes.NewReader(sig), bytes.NewReader([]byte("other"))); err == nil {
+		t.Fatal("expected verify error")
+	}
+}
+
+func TestSignMessageBackendError(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.getKeyErr = errFakeBackendGetKey
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	if _, err := sv.SignMessage(bytes.NewReader([]byte("hello-yckms"))); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestSignMessageNilMessage(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	if _, err := sv.SignMessage(nil); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestCryptoSignerBackendError(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	fake.getKeyErr = errFakeBackendGetKey
+	sv := &SignerVerifier{client: newTestClient(t, fake, testKeyResourceID)}
+
+	if _, _, err := sv.CryptoSigner(t.Context(), nil); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestCryptoSignerPublicErrFunc(t *testing.T) {
+	t.Parallel()
+
+	var got error
+
+	wrapper := cryptoSignerWrapper{
+		ctx: t.Context(),
+		sv:  &SignerVerifier{},
+		errFunc: func(err error) {
+			got = err
+		},
+		hashFunc: crypto.SHA256,
+	}
+
+	if pub := wrapper.Public(); pub != nil {
+		t.Fatal("Public() = non-nil, want nil")
+	}
+
+	if got == nil {
+		t.Fatal("errFunc was not called")
+	}
+}
+
+func TestPublicKeyWrapsVerifierError(t *testing.T) {
+	t.Parallel()
+
+	fake := ecdsaFake(t)
+	client := newTestClient(t, fake, testKeyResourceID)
+	client.skCache.Set(cacheKey, ycSignatureKey{
+		SignatureKey: &asymkms.AsymmetricSignatureKey{
+			Id:                 fake.keyID,
+			FolderId:           "",
+			CreatedAt:          nil,
+			Name:               "",
+			Description:        "",
+			Labels:             nil,
+			Status:             0,
+			SignatureAlgorithm: fake.alg,
+			DeletionProtection: false,
+		},
+		Verifier: stubVerifier{
+			pub:    nil,
+			pubErr: errFakeVerifierPub,
+			sigErr: nil,
+		},
+		HashFunc: crypto.SHA256,
+	}, signatureKeyTTL)
+
+	sv := &SignerVerifier{client: client}
+
+	if _, err := sv.PublicKey(); !errors.Is(err, errFakeVerifierPub) {
+		t.Fatalf("error = %v, want errFakeVerifierPub", err)
+	}
+}
+
+func TestVerifierForAlgorithmUnknownValue(t *testing.T) {
+	t.Parallel()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const unknownAlg asymkms.AsymmetricSignatureAlgorithm = 99
+
+	_, _, err = verifierForAlgorithm(unknownAlg, priv.Public())
+	if !errors.Is(err, ErrUnsupportedAlgorithm) {
+		t.Fatalf("error = %v, want ErrUnsupportedAlgorithm", err)
+	}
+}
+
+func TestSDKBackendWrapsTransportErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	sdk, err := ycsdk.Build(ctx, ycsdk.Config{
+		Credentials:        ycsdk.NewIAMTokenCredentials("test-token"),
+		Endpoint:           "127.0.0.1:1",
+		Plaintext:          true,
+		DialContextTimeout: time.Millisecond,
+		TLSConfig:          nil,
+	}, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return nil, errFakeDial
+	}))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = sdk.Shutdown(ctx)
+	})
+
+	backend := sdkBackend{sdk: sdk}
+
+	if _, err := backend.getKey(ctx, "key-1"); err == nil {
+		t.Fatal("getKey expected error")
+	}
+
+	if _, err := backend.getPublicKeyPEM(ctx, "key-1"); err == nil {
+		t.Fatal("getPublicKeyPEM expected error")
+	}
+
+	if _, err := backend.signHash(ctx, "key-1", []byte("digest")); err == nil {
+		t.Fatal("signHash expected error")
+	}
+
+	_, _, err = backend.createKey(
+		ctx,
+		"folder-1",
+		"key-name",
+		asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256,
+	)
+	if err == nil {
+		t.Fatal("createKey expected error")
 	}
 }
