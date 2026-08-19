@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/sigstore/sigstore/pkg/signature/kms/cliplugin/handler"
@@ -41,33 +42,45 @@ var (
 )
 
 func main() {
-	if len(os.Args) < minPluginArgs {
-		writeError(errMissingProtocolVersion)
-	}
-
-	if protocolVersion := os.Args[1]; protocolVersion != expectedProtocolVersion {
-		writeError(fmt.Errorf("%w %s, got %s", errExpectedProtocolVersion, expectedProtocolVersion, protocolVersion))
-	}
-
-	pluginArgs, err := handler.GetPluginArgs(os.Args)
-	if err != nil {
-		writeError(err)
-	}
-
-	signerVerifier, err := yckms.LoadSignerVerifier(context.Background(), pluginArgs.InitOptions.KeyResourceID)
-	if err != nil {
-		writeError(err)
-	}
-
-	if _, err := handler.Dispatch(os.Stdout, os.Stdin, pluginArgs, signerVerifier); err != nil {
-		os.Exit(1)
-	}
+	os.Exit(run(os.Args, os.Stdin, os.Stdout, yckms.LoadSignerVerifier))
 }
 
-// writeError reports err over the plugin protocol on stdout and exits non-zero.
-// A failed write is unreportable — stdout is the only channel the protocol has.
-func writeError(err error) {
-	_ = handler.WriteErrorResponse(os.Stdout, err)
+func run(
+	args []string,
+	stdin io.Reader,
+	stdout io.Writer,
+	load func(context.Context, string) (*yckms.SignerVerifier, error),
+) int {
+	if len(args) < minPluginArgs {
+		return writeError(stdout, errMissingProtocolVersion)
+	}
 
-	os.Exit(1)
+	if protocolVersion := args[1]; protocolVersion != expectedProtocolVersion {
+		return writeError(
+			stdout,
+			fmt.Errorf("%w %s, got %s", errExpectedProtocolVersion, expectedProtocolVersion, protocolVersion),
+		)
+	}
+
+	pluginArgs, err := handler.GetPluginArgs(args)
+	if err != nil {
+		return writeError(stdout, err)
+	}
+
+	signerVerifier, err := load(context.Background(), pluginArgs.InitOptions.KeyResourceID)
+	if err != nil {
+		return writeError(stdout, err)
+	}
+
+	if _, err := handler.Dispatch(stdout, stdin, pluginArgs, signerVerifier); err != nil {
+		return 1
+	}
+
+	return 0
+}
+
+func writeError(stdout io.Writer, err error) int {
+	_ = handler.WriteErrorResponse(stdout, err)
+
+	return 1
 }
