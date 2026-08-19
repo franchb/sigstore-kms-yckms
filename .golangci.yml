@@ -1,232 +1,204 @@
 version: "2"
-run:
-  modules-download-mode: readonly
-  issues-exit-code: 1
-  tests: true
+
 linters:
-  default: none
   enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - gosec
+    - revive
+    - ineffassign
+    - gocritic
+    - testifylint
+    - modernize
     - asciicheck
     - bidichk
     - bodyclose
+    - canonicalheader
     - containedctx
     - contextcheck
     - copyloopvar
-    #    - cyclop
-    - decorder
-    #    - depguard
+    - cyclop
     - dogsled
-    #    - dupl
-    #    - dupword
+    - dupl
+    - dupword
     - durationcheck
-    #    - errcheck
+    - embeddedstructfieldcheck
+    - err113
     - errchkjson
-    #    - errname
-    #    - errorlint
+    - errname
+    - errorlint
     - exhaustive
-    - forbidigo
-    - reassign
-    #    - musttag
-    #    - ireturn
-    - grouper
-    #    - err113
-    #    - godoclint
-    #    - exhaustruct
-    #    - inamedparam
-    - asasalint
+    - exptostd
+    - fatcontext
     - forcetypeassert
-    #    - funlen
-    #    - maintidx
     - gocheckcompilerdirectives
-    #    - gochecknoglobals
-    #    - gochecknoinits
+    - gochecknoinits
     - gochecksumtype
-    #    - gocognit
-    #    - goconst
-    #    - gocritic
-    #    - gocyclo
-    #    - godot
-    #    - godox
-    #    - goheader
+    - gocognit
+    - goconst
+    - godoclint
+    - godot
     - gomoddirectives
-    - gomodguard_v2
     - goprintffuncname
-    - gosec
-    #    - govet
-    - importas
-    #    - ineffassign
-    #    - lll
-    - loggercheck
+    - iface
+    - intrange
+    - iotamixing
     - makezero
     - mirror
-    #    - misspell
-    #    - mnd
+    - misspell
     - nakedret
-    #    - nestif
+    - nestif
     - nilerr
+    - nilnesserr
     - nilnil
     - noctx
-    #    - nolintlint
-    - paralleltest
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
     - perfsprint
-    - prealloc
-    #    - predeclared
-    #    - revive
-    - rowserrcheck
-    - sloglint
+    - predeclared
+    - reassign
+    - recvcheck
     - sqlclosecheck
-    - staticcheck
-    #    - tagliatelle
-    - testifylint
-    - testpackage
+    - testableexamples
     - thelper
     - tparallel
-    #    - unconvert
-    #    - unparam
-    #    - unused
+    - unconvert
+    - unparam
     - usestdlibvars
-    #    - varnamelen
-    #    - wastedassign
-    - whitespace
-    #    - wrapcheck
-    - wsl_v5
     - usetesting
-    #    - testableexamples
-    #    - protogetter
-    - nlreturn
-    - iotamixing
-    - intrange
-    - tagalign
-    - spancheck
-    - iface
-    - interfacebloat
-    - modernize
-    - canonicalheader
-    - embeddedstructfieldcheck
-    - exptostd
-    #    - funcorder
-    #    #- err113
-    - fatcontext
+    - wastedassign
+    - whitespace
+    - wrapcheck
+    - wsl_v5
+    - asasalint
+    - arangolint
+    - decorder
+    - exhaustruct
+    - depguard
+    - forbidigo
+    - funcorder
+    - funlen
     - ginkgolinter
-    #    - recvcheck
+    - gochecknoglobals
+    - godox
+    - goheader
+    - gomodguard
+    - gosmopolitan
+    - grouper
+    - importas
+    - inamedparam
+    - interfacebloat
+    - ireturn
+    - lll
+    - loggercheck
+    - maintidx
+    - mnd
+    - musttag
+    - paralleltest
+    - prealloc
     - promlinter
-    - nosprintfhostport
-    - nilnesserr
-  #    - ireturn
+    - protogetter
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - tagalign
+    - tagliatelle
+    - testpackage
+    - unqueryvet
+    - varnamelen
+    - zerologlint
+
   settings:
+    errcheck:
+      exclude-functions:
+        - io.Copy
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*compress/gzip.Reader).Close
+        - (*os/exec.Cmd).Wait
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (net.Listener).Close
+        - os.Remove
+        - os.RemoveAll
+        - (*net/http.Server).Serve
+    gosec:
+      excludes: []
+    goconst:
+      min-occurrences: 4
+    funlen:
+      lines: 100
+      statements: 60
     cyclop:
-      max-complexity: 25
-      package-average: 15
+      max-complexity: 16
+    mnd:
+      ignored-numbers:
+        - '0o755'
+      checks:
+        - argument
+        - case
+        - condition
+        - operation
+        - return
+    varnamelen:
+      min-name-length: 2
+      ignore-names:
+        - y
+        - c
+        - ok
+        - tt
+        - op
+    ireturn:
+      allow:
+        - error
+        - empty
+        - stdlib
+        - github.com/yandex-cloud/go-sdk.Credentials
+        - github.com/sigstore/sigstore/pkg/signature.Verifier
+    testpackage:
+      allow-packages:
+        - yckms
+        - main
     depguard:
       rules:
         main:
-          files:
-            - $all
-            - '!$test'
-          allow:
-            - $gostd
-        tests:
-          files:
-            - $test
-          allow:
-            - $gostd
-    dupl:
-      threshold: 100
-    funlen:
-      lines: 100
-      statements: 50
-    goconst:
-      min-len: 2
-      min-occurrences: 2
-    gocritic:
-      disabled-checks:
-        - dupImport
-      enabled-tags:
-        - diagnostic
-        - experimental
-        - opinionated
-        - performance
-        - style
-    gocyclo:
-      min-complexity: 15
-    govet:
-      enable-all: true
-    lll:
-      line-length: 120
-    misspell:
-      locale: US
+          deny:
+            - pkg: log
+              desc: "Use io.Writer-based logging instead."
+    exhaustruct:
+      exclude:
+        # stdlib types where partial init is idiomatic.
+        - '.*\.Client$'
+        - '.*\.Server$'
+        - '.*syscall\.SysProcAttr$'
+        # Anonymous structs (table-driven test cases).
+        - '.*<anonymous>$'
+        # Internal types built up field-by-field or relying on zero values.
+        - '.*yckms\.ycKmsClient$'
+        - '.*yckms\.SignerVerifier$'
+        - '.*go-sdk\.Config$'
     revive:
-      severity: warning
-      enable-all-rules: true
       rules:
-        - name: line-length-limit
-          severity: warning
-          disabled: false
-          exclude: [""]
-          arguments: [ 120 ]
-        - name: unhandled-error
-          severity: warning
-          disabled: false
-          arguments:
-            - ".*WriteString$"
-            - ".*WriteByte$"
-        - name: add-constant
-          severity: warning
-          disabled: false
-          exclude: [""]
-          arguments:
-            - max-lit-count: "3"
-              allow-strs: '""'
-              allow-ints: "0,1,2"
-              allow-floats: "0.0,0.,1.0,1.,2.0,2."
-    varnamelen:
-      max-distance: 6
-      min-name-length: 2
-      check-receiver: true
-      check-return: true
-      ignore-names:
-        - err
-        - wg
-      ignore-type-assert-ok: true
-      ignore-map-index-ok: true
-      ignore-chan-recv-ok: true
-      ignore-decls:
-        - c echo.Context
-        - t testing.T
-        - f *foo.Bar
-        - e error
-        - i int
-        - const C
+        - name: exported
+          disabled: true
+        - name: unused-parameter
+          disabled: true
+
   exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
     rules:
-      - linters:
+      - path: _test\.go$
+        linters:
+          - gosec
+          - errcheck
           - cyclop
-          - goconst
-        path: (.+)_test\.go
-    paths:
-      - internal/syslog
-      - third_party$
-      - builtin$
-      - examples$
+          - forcetypeassert
+          - noctx
+          - lll
+
 formatters:
   enable:
-    - gofmt
     - gofumpt
-    - goimports
-  settings:
-    goimports:
-      local-prefixes:
-        - github.com/franchb/sigstore-kms-yckms
-  exclusions:
-    generated: lax
-    paths:
-      - internal/syslog
-      - third_party$
-      - builtin$
-      - examples$

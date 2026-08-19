@@ -16,7 +16,6 @@
 package yckms
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 )
@@ -33,9 +32,6 @@ const (
 )
 
 var (
-	// ErrKMSReference is returned when a provider-stripped yckms resource ID is invalid.
-	ErrKMSReference = errors.New("yckms specification should be in the format yckms://[ENDPOINT]/KEY_ID or yckms://[ENDPOINT]/folder/FOLDER_ID/keyname/KEY_NAME; pass resource IDs without yckms:// into pkg/yckms")
-
 	createReferenceRE = regexp.MustCompile(`^([^/]*)/folder/([^/]+)/keyname/([^/]+)$`)
 	keyIDReferenceRE  = regexp.MustCompile(`^([^/]*)/([^/]+)$`)
 )
@@ -50,7 +46,7 @@ func ValidReference(ref string) error {
 }
 
 // ParseReference parses a provider-stripped yckms resource ID into endpoint and key creation fields.
-func ParseReference(reference string) (endpoint, keyID, folderID, keyName string, err error) {
+func ParseReference(reference string) (string, string, string, string, error) {
 	if matches := createReferenceRE.FindStringSubmatch(reference); matches != nil {
 		return matches[1], "", matches[2], matches[3], nil
 	}

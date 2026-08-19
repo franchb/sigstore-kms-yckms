@@ -20,7 +20,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -35,19 +34,22 @@ import (
 
 const cacheKey = "sign_key"
 
-var algorithmMap = map[string]asymkms.AsymmetricSignatureAlgorithm{
-	AlgorithmECDSANISTP256SHA256:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256,
-	AlgorithmECDSANISTP384SHA384:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384,
-	AlgorithmECDSANISTP521SHA512:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512,
-	AlgorithmRSA2048SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
-	AlgorithmRSA2048SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
-	AlgorithmRSA2048SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
-	AlgorithmRSA3072SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
-	AlgorithmRSA3072SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
-	AlgorithmRSA3072SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
-	AlgorithmRSA4096SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256,
-	AlgorithmRSA4096SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384,
-	AlgorithmRSA4096SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512,
+// algorithmMap maps this package's algorithm names to Yandex Cloud KMS algorithms.
+func algorithmMap() map[string]asymkms.AsymmetricSignatureAlgorithm {
+	return map[string]asymkms.AsymmetricSignatureAlgorithm{
+		AlgorithmECDSANISTP256SHA256:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256,
+		AlgorithmECDSANISTP384SHA384:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384,
+		AlgorithmECDSANISTP521SHA512:  asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512,
+		AlgorithmRSA2048SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
+		AlgorithmRSA2048SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
+		AlgorithmRSA2048SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
+		AlgorithmRSA3072SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
+		AlgorithmRSA3072SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
+		AlgorithmRSA3072SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
+		AlgorithmRSA4096SignPSSSHA256: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256,
+		AlgorithmRSA4096SignPSSSHA384: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384,
+		AlgorithmRSA4096SignPSSSHA512: asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512,
+	}
 }
 
 type ycKmsClient struct {
@@ -102,12 +104,73 @@ func newYcKmsClient(ctx context.Context, resourceID string, opts ...grpc.DialOpt
 	return y, nil
 }
 
+// verifierForAlgorithm returns a local verifier and digest algorithm for a KMS signature algorithm.
+func verifierForAlgorithm(
+	alg asymkms.AsymmetricSignatureAlgorithm,
+	pubKey crypto.PublicKey,
+) (signature.Verifier, crypto.Hash, error) {
+	var hashFunc crypto.Hash
+
+	switch alg {
+	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
+		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
+		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256:
+		hashFunc = crypto.SHA256
+	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
+		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
+		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384:
+		hashFunc = crypto.SHA384
+	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
+		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
+		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512:
+		hashFunc = crypto.SHA512
+	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256:
+		return ecdsaVerifier(pubKey, crypto.SHA256)
+	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384:
+		return ecdsaVerifier(pubKey, crypto.SHA384)
+	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512:
+		return ecdsaVerifier(pubKey, crypto.SHA512)
+	case asymkms.AsymmetricSignatureAlgorithm_ASYMMETRIC_SIGNATURE_ALGORITHM_UNSPECIFIED,
+		asymkms.AsymmetricSignatureAlgorithm_ECDSA_SECP256_K1_SHA_256:
+		return nil, 0, ErrUnsupportedAlgorithm
+	default:
+		return nil, 0, ErrUnsupportedAlgorithm
+	}
+
+	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, 0, ErrPublicKeyNotRSA
+	}
+
+	verifier, err := signature.LoadRSAPSSVerifier(rsaPubKey, hashFunc, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("initializing internal RSA-PSS verifier: %w", err)
+	}
+
+	return verifier, hashFunc, nil
+}
+
+// ecdsaVerifier returns a local ECDSA verifier for pubKey at the given digest algorithm.
+func ecdsaVerifier(pubKey crypto.PublicKey, hashFunc crypto.Hash) (signature.Verifier, crypto.Hash, error) {
+	ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, 0, ErrPublicKeyNotECDSA
+	}
+
+	verifier, err := signature.LoadECDSAVerifier(ecdsaPubKey, hashFunc)
+	if err != nil {
+		return nil, 0, fmt.Errorf("initializing internal ECDSA verifier: %w", err)
+	}
+
+	return verifier, hashFunc, nil
+}
+
 func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, error) {
 	getRequest := &asymkms.GetAsymmetricSignatureKeyRequest{KeyId: y.keyID}
 
 	asymKey, err := y.client.KMSAsymmetricSignature().AsymmetricSignatureKey().Get(ctx, getRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching yckms signature key %q: %w", y.keyID, err)
 	}
 
 	pubKey, err := y.fetchPublicKey(ctx)
@@ -115,72 +178,16 @@ func (y *ycKmsClient) getYcSignatureKey(ctx context.Context) (*ycSignatureKey, e
 		return nil, err
 	}
 
-	signatureKey := ycSignatureKey{SignatureKey: asymKey}
-	switch asymKey.SignatureAlgorithm {
-	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_256,
-		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_256,
-		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_256:
-		rsaPubKey, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key is not RSA")
-		}
-
-		signatureKey.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA256, nil)
-		signatureKey.HashFunc = crypto.SHA256
-	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_384,
-		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_384,
-		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_384:
-		rsaPubKey, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key is not RSA")
-		}
-
-		signatureKey.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA384, nil)
-		signatureKey.HashFunc = crypto.SHA384
-	case asymkms.AsymmetricSignatureAlgorithm_RSA_2048_SIGN_PSS_SHA_512,
-		asymkms.AsymmetricSignatureAlgorithm_RSA_3072_SIGN_PSS_SHA_512,
-		asymkms.AsymmetricSignatureAlgorithm_RSA_4096_SIGN_PSS_SHA_512:
-		rsaPubKey, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key is not RSA")
-		}
-
-		signatureKey.Verifier, err = signature.LoadRSAPSSVerifier(rsaPubKey, crypto.SHA512, nil)
-		signatureKey.HashFunc = crypto.SHA512
-	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P256_SHA_256:
-		ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key is not ECDSA")
-		}
-
-		signatureKey.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA256)
-		signatureKey.HashFunc = crypto.SHA256
-	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P384_SHA_384:
-		ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key is not ECDSA")
-		}
-
-		signatureKey.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA384)
-		signatureKey.HashFunc = crypto.SHA384
-	case asymkms.AsymmetricSignatureAlgorithm_ECDSA_NIST_P521_SHA_512:
-		ecdsaPubKey, ok := pubKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key is not ECDSA")
-		}
-
-		signatureKey.Verifier, err = signature.LoadECDSAVerifier(ecdsaPubKey, crypto.SHA512)
-		signatureKey.HashFunc = crypto.SHA512
-	case asymkms.AsymmetricSignatureAlgorithm_ASYMMETRIC_SIGNATURE_ALGORITHM_UNSPECIFIED,
-		asymkms.AsymmetricSignatureAlgorithm_ECDSA_SECP256_K1_SHA_256:
-		return nil, errors.New("unsupported algorithm specified by KMS")
-	}
-
+	verifier, hashFunc, err := verifierForAlgorithm(asymKey.GetSignatureAlgorithm(), pubKey)
 	if err != nil {
-		return nil, fmt.Errorf("initializing internal verifier: %w", err)
+		return nil, err
 	}
 
-	return &signatureKey, nil
+	return &ycSignatureKey{
+		SignatureKey: asymKey,
+		Verifier:     verifier,
+		HashFunc:     hashFunc,
+	}, nil
 }
 
 func (y *ycKmsClient) getHashFunc(ctx context.Context) (crypto.Hash, error) {
@@ -191,6 +198,9 @@ func (y *ycKmsClient) getHashFunc(ctx context.Context) (crypto.Hash, error) {
 
 	return signatureKey.HashFunc, nil
 }
+
+// signatureKeyTTL bounds how long a fetched KMS signature key is cached.
+const signatureKeyTTL = 5 * time.Minute
 
 func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 	var loaderErr error
@@ -204,7 +214,7 @@ func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 				return nil
 			}
 
-			return cache.Set(key, *signatureKey, 5*time.Minute)
+			return cache.Set(key, *signatureKey, signatureKeyTTL)
 		},
 	)
 
@@ -215,7 +225,7 @@ func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 	}
 
 	if item == nil {
-		return nil, errors.New("signature key cache returned nil item")
+		return nil, errSignatureKeyCacheEmpty
 	}
 
 	signatureKey := item.Value()
@@ -225,12 +235,12 @@ func (y *ycKmsClient) getSK(ctx context.Context) (*ycSignatureKey, error) {
 
 func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.PublicKey, error) {
 	if y.folderID == "" || y.keyName == "" {
-		return nil, errors.New("generate yckms key specification should be in the format yckms://[ENDPOINT]/folder/FOLDER/keyname/KEYNAME")
+		return nil, ErrCreateKeyReference
 	}
 
-	signatureAlgorithm, ok := algorithmMap[algorithm]
+	signatureAlgorithm, ok := algorithmMap()[algorithm]
 	if !ok {
-		return nil, errors.New("unknown algorithm requested")
+		return nil, ErrUnknownAlgorithm
 	}
 
 	createKeyRequest := &asymkms.CreateAsymmetricSignatureKeyRequest{
@@ -238,9 +248,14 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 		FolderId:           y.folderID,
 		Name:               y.keyName,
 		Description:        "Created by sigstore",
+		Labels:             nil,
+		DeletionProtection: false,
 	}
 
-	op, err := y.client.WrapOperation(y.client.KMSAsymmetricSignature().AsymmetricSignatureKey().Create(ctx, createKeyRequest))
+	createResponse, createErr := y.client.KMSAsymmetricSignature().
+		AsymmetricSignatureKey().Create(ctx, createKeyRequest)
+
+	op, err := y.client.WrapOperation(createResponse, createErr)
 	if err != nil {
 		return nil, fmt.Errorf("yckms key create error: %w", err)
 	}
@@ -256,17 +271,22 @@ func (y *ycKmsClient) createKey(ctx context.Context, algorithm string) (crypto.P
 
 	key, ok := resp.(*asymkms.AsymmetricSignatureKey)
 	if !ok {
-		return nil, errors.New("failed to cast response to *asymkms.AsymmetricSignatureKey")
+		return nil, errUnexpectedCreateKeyResponse
 	}
 
-	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.Id}
+	getPubKeyRequest := &asymkms.AsymmetricGetPublicKeyRequest{KeyId: key.GetId()}
 
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching public key for created yckms key: %w", err)
 	}
 
-	return cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	if err != nil {
+		return nil, fmt.Errorf("parsing PEM public key for created yckms key: %w", err)
+	}
+
+	return publicKey, nil
 }
 
 func (y *ycKmsClient) verify(ctx context.Context, sig, message io.Reader, opts ...signature.VerifyOption) error {
@@ -275,7 +295,11 @@ func (y *ycKmsClient) verify(ctx context.Context, sig, message io.Reader, opts .
 		return err
 	}
 
-	return signatureKey.Verifier.VerifySignature(sig, message, opts...)
+	if err := signatureKey.Verifier.VerifySignature(sig, message, opts...); err != nil {
+		return fmt.Errorf("verifying yckms signature: %w", err)
+	}
+
+	return nil
 }
 
 func (y *ycKmsClient) sign(ctx context.Context, digest []byte, _ crypto.Hash) ([]byte, error) {
@@ -289,7 +313,7 @@ func (y *ycKmsClient) sign(ctx context.Context, digest []byte, _ crypto.Hash) ([
 		return nil, fmt.Errorf("calling YC KMS AsymmetricSignatureCrypto.SignHash: %w", err)
 	}
 
-	return signResponse.Signature, nil
+	return signResponse.GetSignature(), nil
 }
 
 func (y *ycKmsClient) fetchPublicKey(ctx context.Context) (crypto.PublicKey, error) {
@@ -297,8 +321,13 @@ func (y *ycKmsClient) fetchPublicKey(ctx context.Context) (crypto.PublicKey, err
 
 	pubKey, err := y.client.KMSAsymmetricSignatureCrypto().AsymmetricSignatureCrypto().GetPublicKey(ctx, getPubKeyRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching yckms public key for key %q: %w", y.keyID, err)
 	}
 
-	return cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	publicKey, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(pubKey.GetPublicKey()))
+	if err != nil {
+		return nil, fmt.Errorf("parsing yckms PEM public key: %w", err)
+	}
+
+	return publicKey, nil
 }

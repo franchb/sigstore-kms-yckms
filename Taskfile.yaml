@@ -94,7 +94,7 @@ tasks:
     cmds:
       - task: format
       - task: betteralign
-      - "{{ .TOOL_DIR }}/golangci-lint run --tests=false --fix"
+      - "{{ .TOOL_DIR }}/golangci-lint run --fix"
 
   lint:
     desc: Run gofmt + golangci lint checks
@@ -112,7 +112,7 @@ tasks:
       - cmd: 'test -z "{{ .BAD_FILE_NAMES }}" || (echo "files with bad names: [{{ .BAD_FILE_NAMES }}]"; exit 1)'
         silent: true
       # run linting
-      - "{{ .TOOL_DIR }}/golangci-lint run --tests=false"
+      - "{{ .TOOL_DIR }}/golangci-lint run"
 
 
   test:
