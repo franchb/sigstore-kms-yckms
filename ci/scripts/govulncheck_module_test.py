@@ -49,6 +49,15 @@ reason = "expired"
         remaining = gvm.remaining_findings(text, ignored)
         self.assertEqual(remaining, ["GO-2025-0002"])
 
+    def test_remaining_drops_alias_from_osv_record(self):
+        # govulncheck v1.7.0 puts aliases on top-level osv objects, not findings.
+        ignored = {"GHSA-xxxx-yyyy-zzzz"}
+        text = json.dumps(
+            {"osv": {"id": "GO-2025-0002", "aliases": ["GHSA-xxxx-yyyy-zzzz"]}}
+        ) + json.dumps(finding("GO-2025-0002")) + json.dumps(finding("GO-2025-0003"))
+        remaining = gvm.remaining_findings(text, ignored)
+        self.assertEqual(remaining, ["GO-2025-0003"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,7 +43,7 @@ def ignored_ids(toml_path: Path, now: datetime.date | None = None) -> set[str]:
 
 def remaining_findings(json_text: str, ignored: set[str]) -> list[str]:
     decoder = json.JSONDecoder()
-    remaining: list[str] = []
+    objects: list[dict] = []
     i = 0
     text = json_text
     n = len(text)
@@ -54,6 +54,22 @@ def remaining_findings(json_text: str, ignored: set[str]) -> list[str]:
             break
         obj, end = decoder.raw_decode(text, i)
         i = end
+        if isinstance(obj, dict):
+            objects.append(obj)
+
+    aliases_by_id: dict[str, list[str]] = {}
+    for obj in objects:
+        osv_rec = obj.get("osv")
+        if not isinstance(osv_rec, dict):
+            continue
+        vid = osv_rec.get("id")
+        if not isinstance(vid, str):
+            continue
+        rec_aliases = osv_rec.get("aliases") or []
+        aliases_by_id[vid] = [a for a in rec_aliases if isinstance(a, str)]
+
+    remaining: list[str] = []
+    for obj in objects:
         finding = obj.get("finding")
         if not isinstance(finding, dict):
             continue
@@ -62,6 +78,7 @@ def remaining_findings(json_text: str, ignored: set[str]) -> list[str]:
         ids = []
         if isinstance(osv_id, str):
             ids.append(osv_id)
+            ids.extend(aliases_by_id.get(osv_id, []))
         ids.extend(a for a in aliases if isinstance(a, str))
         if ids and any(item in ignored for item in ids):
             continue
