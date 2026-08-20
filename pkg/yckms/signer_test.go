@@ -1,6 +1,8 @@
 //
 // Copyright 2023 The Sigstore Authors.
 //
+// SPDX-License-Identifier: Apache-2.0
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -36,6 +38,43 @@ func TestLoadSignerVerifierRejectsInvalidReferenceBeforeCredentials(t *testing.T
 	_, err := LoadSignerVerifier(context.Background(), "invalid")
 	if !errors.Is(err, ErrKMSReference) {
 		t.Fatalf("LoadSignerVerifier() error = %v, want ErrKMSReference", err)
+	}
+}
+
+func TestLoadSignerVerifierNoCredentials(t *testing.T) {
+	t.Setenv(EnvYcIAMToken, "")
+	t.Setenv(EnvYcOAuthToken, "")
+	t.Setenv(EnvYcServiceAccountKeyFile, "")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := LoadSignerVerifier(ctx, testKeyResourceID)
+	if err == nil {
+		t.Fatal("LoadSignerVerifier() succeeded without credentials")
+	}
+}
+
+func TestLoadSignerVerifierBuildsClient(t *testing.T) {
+	t.Setenv(EnvYcIAMToken, "iam-test-token")
+	t.Setenv(EnvYcOAuthToken, "")
+	t.Setenv(EnvYcServiceAccountKeyFile, "")
+
+	sv, err := LoadSignerVerifier(t.Context(), "example.invalid:1/key-1")
+	if err != nil {
+		t.Fatalf("LoadSignerVerifier() error = %v", err)
+	}
+
+	if sv == nil || sv.client == nil {
+		t.Fatal("LoadSignerVerifier() returned a nil client")
+	}
+
+	if sv.client.endpoint != "example.invalid:1" {
+		t.Fatalf("endpoint = %q, want example.invalid:1", sv.client.endpoint)
+	}
+
+	if sv.client.backend == nil {
+		t.Fatal("backend is nil")
 	}
 }
 

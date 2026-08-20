@@ -32,6 +32,13 @@ tools:
       entrypoint: cmd/govulncheck
       module: golang.org/x/vuln
 
+  - name: osv-scanner
+    version:
+      want: v2.5.1
+    method: github-release
+    with:
+      repo: google/osv-scanner
+
   - name: betteralign
     version:
       want: v0.14.4

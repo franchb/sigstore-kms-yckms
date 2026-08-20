@@ -11,7 +11,7 @@ jobs:
   run:
     name: Vuln
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -30,5 +30,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run govulncheck
+      - name: Run call-graph govulncheck
         run: make govulncheck
+
+      - name: Run govulncheck module scan
+        run: make govulncheck-module
+
+      - name: Run OSV Scanner
+        run: make osv-scanner

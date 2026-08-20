@@ -57,6 +57,7 @@ tasks:
       - task: validate-actions
       - task: verify-no-diff
       - task: test
+      - task: fuzz
       - task: verify-no-diff
       - task: govulncheck
       - echo "CI checks passed"
@@ -72,6 +73,26 @@ tasks:
     cmds:
       - "{{ .TOOL_DIR }}/govulncheck ./..."
 
+  govulncheck-module:
+    desc: Fail on Go module-graph vulns except osv-scanner.toml ignores
+    deps: [ tools ]
+    cmds:
+      - "python3 -m unittest ci/scripts/govulncheck_module_test.py"
+      - cmd: "python3 ci/scripts/govulncheck_module.py"
+        env:
+          GOVULNCHECK: "{{ .TOOL_DIR }}/govulncheck"
+
+  osv-scanner:
+    desc: Scan go.mod/go.sum against OSV, GHSA, and MAL advisories
+    deps: [ tools ]
+    cmds:
+      - "{{ .TOOL_DIR }}/osv-scanner scan source --recursive ."
+
+  fuzz:
+    desc: Run native Go fuzz of ParseReference for 20s
+    deps: [ tools ]
+    cmds:
+      - "go test ./pkg/yckms -fuzz=FuzzParseReference -fuzztime=20s"
 
   format:
     desc: Auto-format all source code
@@ -120,7 +141,7 @@ tasks:
     deps: [tools, tmpdir]
     vars:
       # unit test coverage threshold (in % coverage)
-      COVERAGE_THRESHOLD: 0
+      COVERAGE_THRESHOLD: 90
     cmds:
       - "go test -coverprofile {{ .TMP_DIR }}/unit-coverage-details.txt ./..."
       - cmd: "ci/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"
