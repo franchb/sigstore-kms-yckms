@@ -7,7 +7,7 @@ toolchain go1.26.6
 require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/sigstore/sigstore v1.10.9
-	github.com/yandex-cloud/go-genproto v0.113.0
+	github.com/yandex-cloud/go-genproto v0.115.0
 	github.com/yandex-cloud/go-sdk v0.33.0
 	google.golang.org/grpc v1.83.0
 )
