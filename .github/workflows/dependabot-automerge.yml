@@ -1,5 +1,27 @@
 name: Dependabot auto-merge
 
+# ---------------------------------------------------------------------------
+# KNOWN NOT TO COMPLETE A MERGE TODAY. Kept because the policy logic below is
+# correct and reusable, but two GitHub limitations stop it short of merging:
+#
+# 1. GitHub's auto-merge does not honour ruleset `bypass_actors`. The bypass is
+#    enforced on the synchronous merge endpoint, but the deferred auto-merge
+#    completion path never re-checks it, so an auto-merge PR stays BLOCKED.
+#    GitHub Support calls this a known limitation of branch rulesets with no
+#    near-term fix. https://github.com/orgs/community/discussions/162623
+#
+# 2. The bypass actor has to name whoever CALLS the merge API, not the PR
+#    author. Dependabot never merges; this workflow does. GITHUB_TOKEN acts as
+#    github-actions[bot], and that integration cannot be a bypass actor on a
+#    user-owned repository -- the API rejects it with "Actor GitHub Actions
+#    integration must be part of the ruleset source or owner organization".
+#
+# Making this merge requires a dedicated GitHub App installed on the repo and
+# added to the `main-reviews` ruleset as a bypass actor, minting a token via
+# actions/create-github-app-token, then merging synchronously once the required
+# checks are green instead of calling `--auto`.
+# ---------------------------------------------------------------------------
+
 # Dependabot PRs get a read-only token under `pull_request`, so enabling
 # auto-merge requires `pull_request_target`. This workflow never checks out or
 # executes pull request code, and the job is gated on the Dependabot actor.
