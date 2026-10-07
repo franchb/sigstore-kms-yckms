@@ -11,20 +11,25 @@ name: Dependabot auto-merge
 # `main-reviews` bypass actor. GITHUB_TOKEN cannot be one: the API rejects
 # github-actions[bot] as a bypass actor on a user-owned repository.
 #
-# Setup (until done, the job only logs a notice):
+# Setup (until done, the job is skipped):
 #   vars.DEPENDABOT_MERGER_CLIENT_ID      the app's client ID
 #   secrets.DEPENDABOT_MERGER_PRIVATE_KEY the app's private key (PEM)
 
-# Dependabot PRs get a read-only token and no secrets under `pull_request`, so
-# this needs `pull_request_target`. It never checks out or executes pull request
-# code, and the job is gated on Dependabot-authored, same-repository PRs.
+# Why workflow_run: Dependabot-triggered `pull_request` runs get no Actions
+# secrets, and `pull_request_target` withholds secrets whenever the PR author is
+# dependabot[bot]. `workflow_run` runs this file from the default branch with
+# Actions secrets. It never checks out or executes pull request code; it only
+# reads PR metadata through the API. Each listed workflow produces required
+# checks, so re-running any of them after a flake re-fires this job.
 on: # zizmor: ignore[dangerous-triggers]
-  pull_request_target:
+  workflow_run:
+    workflows: [CI, Dependency Review, PR Title, Validate GitHub Actions]
+    types: [completed]
 
 permissions: {}
 
 concurrency:
-  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  group: dependabot-automerge-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
@@ -33,9 +38,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: >-
-      github.event.pull_request.user.login == 'dependabot[bot]'
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && github.repository == 'franchb/sigstore-kms-yckms'
+      github.repository == 'franchb/sigstore-kms-yckms'
+      && vars.DEPENDABOT_MERGER_CLIENT_ID != ''
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     permissions:
       checks: read
       contents: read
@@ -43,61 +51,85 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      BASE: ${{ github.event.pull_request.base.ref }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_TITLE: ${{ github.event.pull_request.title }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
-      - name: Check merger app is configured
-        if: vars.DEPENDABOT_MERGER_CLIENT_ID == ''
-        run: echo "::notice::DEPENDABOT_MERGER_CLIENT_ID is not set; leaving this PR for manual review."
+      # The event names a commit, not a PR. Resolve the open Dependabot PR whose
+      # head is exactly that commit, so nothing below acts on a different head.
+      - name: Resolve pull request
+        id: pr
+        run: |
+          pr=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" | jq -c \
+            --arg ref "$HEAD_BRANCH" --arg sha "$HEAD_SHA" --arg repo "$REPO" \
+            '[.[] | select(.state == "open" and .head.ref == $ref and .head.sha == $sha
+                     and .user.login == "dependabot[bot]" and .head.repo.full_name == $repo)] | first // empty')
+          if [ -z "$pr" ]; then
+            echo "no open Dependabot PR with head $HEAD_SHA; nothing to do."
+            exit 0
+          fi
+          {
+            echo "number=$(jq -r .number <<<"$pr")"
+            echo "base=$(jq -r .base.ref <<<"$pr")"
+            echo "found=true"
+          } >> "$GITHUB_OUTPUT"
+          jq -r '"PR #\(.number): \(.title)"' <<<"$pr"
 
-      # No checkout: this job must never execute code from the pull request.
-      - name: Fetch Dependabot metadata
-        id: meta
-        if: vars.DEPENDABOT_MERGER_CLIENT_ID != ''
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-
-      # `update-type` is the HIGHEST semver change in the PR, so a grouped
-      # update is judged by its most significant bump. Go modules and Docker
-      # merge on patch only. The github-actions group also merges on minor,
-      # because actions are pinned to digests and reviewed as digests either
-      # way. Major bumps always stay manual.
-      - name: Apply update policy
-        id: policy
-        if: vars.DEPENDABOT_MERGER_CLIENT_ID != ''
+      # Anyone with write access can push to a Dependabot branch, and a commit's
+      # author is just a field. Dependabot PRs are always a single commit that
+      # GitHub itself committed (web-flow) and signed, with Dependabot as author.
+      # A human signing with their own key becomes the committer, and a web-UI
+      # edit carries the human as author, so both fail here.
+      - name: Verify Dependabot provenance
+        if: steps.pr.outputs.found == 'true'
         env:
-          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
-          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
-          eligible=false
-          case "$UPDATE_TYPE" in
-            version-update:semver-patch) eligible=true ;;
-            version-update:semver-minor) [ "$ECOSYSTEM" = github_actions ] && eligible=true ;;
-          esac
-          echo "ecosystem=$ECOSYSTEM update-type=$UPDATE_TYPE eligible=$eligible"
-          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-
-      # Anyone with write access can push to a Dependabot branch. Only merge if
-      # every commit is Dependabot's own and GitHub-verified, so the review
-      # bypass cannot carry a human commit past review.
-      - name: Verify every commit is Dependabot's
-        if: steps.policy.outputs.eligible == 'true'
-        run: |
-          foreign=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits?per_page=100" \
-            --jq '.[] | select(.author.login != "dependabot[bot]" or .commit.verification.verified != true) | .sha')
-          if [ -n "$foreign" ]; then
-            echo "::warning::non-Dependabot or unverified commits present, leaving for manual review: $foreign"
+          commits=$(gh api "repos/$REPO/pulls/$PR_NUMBER/commits?per_page=100")
+          count=$(jq length <<<"$commits")
+          bad=$(jq -r '.[] | select(
+                  .author.login != "dependabot[bot]" or .author.type != "Bot"
+                  or .committer.login != "web-flow"
+                  or .commit.verification.verified != true) | .sha' <<<"$commits")
+          if [ "$count" -ne 1 ] || [ -n "$bad" ]; then
+            echo "::warning::expected one GitHub-signed Dependabot commit, got $count (rejected: ${bad:-none}); leaving for manual review."
             exit 1
           fi
+          [ "$(jq -r '.[0].sha' <<<"$commits")" = "$HEAD_SHA" ] || { echo "::error::PR head moved."; exit 1; }
+
+      # Same policy fetch-metadata would apply, read from the trailer on the
+      # commit just verified. `update-type` per dependency; the PR is judged by
+      # its HIGHEST bump. Every ecosystem merges on patch; the github-actions
+      # group also on minor, because actions are pinned to digests and reviewed
+      # as digests either way. Major, and bumps with no semver type (Docker
+      # digests), stay manual.
+      - name: Apply update policy
+        id: policy
+        if: steps.pr.outputs.found == 'true'
+        run: |
+          ecosystem=$(cut -d/ -f2 <<<"$HEAD_BRANCH")
+          types=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq .commit.message \
+            | awk '/^updated-dependencies:/ {f = 1; next} /^\.\.\.$/ {f = 0} f && $1 == "update-type:" {print $2}')
+          if grep -q semver-major <<<"$types"; then highest="major"
+          elif grep -q semver-minor <<<"$types"; then highest="minor"
+          elif grep -q semver-patch <<<"$types"; then highest="patch"
+          else highest="none"; fi
+          eligible=false
+          case "$highest" in
+            patch) eligible=true ;;
+            minor) [ "$ecosystem" = github_actions ] && eligible=true ;;
+          esac
+          echo "ecosystem=$ecosystem highest=$highest eligible=$eligible"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
 
       - name: Wait for required checks
         if: steps.policy.outputs.eligible == 'true'
+        env:
+          BASE: ${{ steps.pr.outputs.base }}
         run: |
           required=$(gh api "repos/$REPO/rules/branches/$BASE" \
             --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique | .[]')
@@ -143,14 +175,17 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
-      # Synchronous merge: honours the ruleset bypass, unlike auto-merge.
-      # `sha` makes it fail rather than merge if the head moved after the checks.
+      # Synchronous merge: honours the ruleset bypass, unlike auto-merge. The
+      # bypass covers only `main-reviews`; `main-checks` still applies. `sha`
+      # makes it fail rather than merge if the head moved after the checks.
       - name: Merge
         if: steps.policy.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
+          title=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .title)
           gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/merge" \
             -f merge_method=squash \
             -f sha="$HEAD_SHA" \
-            -f commit_title="$PR_TITLE (#$PR_NUMBER)"
+            -f commit_title="$title (#$PR_NUMBER)"
