@@ -1,0 +1,68 @@
+name: Dependabot auto-merge
+
+# ---------------------------------------------------------------------------
+# KNOWN NOT TO COMPLETE A MERGE TODAY. Kept because the policy logic below is
+# correct and reusable, but two GitHub limitations stop it short of merging:
+#
+# 1. GitHub's auto-merge does not honour ruleset `bypass_actors`. The bypass is
+#    enforced on the synchronous merge endpoint, but the deferred auto-merge
+#    completion path never re-checks it, so an auto-merge PR stays BLOCKED.
+#    GitHub Support calls this a known limitation of branch rulesets with no
+#    near-term fix. https://github.com/orgs/community/discussions/162623
+#
+# 2. The bypass actor has to name whoever CALLS the merge API, not the PR
+#    author. Dependabot never merges; this workflow does. GITHUB_TOKEN acts as
+#    github-actions[bot], and that integration cannot be a bypass actor on a
+#    user-owned repository -- the API rejects it with "Actor GitHub Actions
+#    integration must be part of the ruleset source or owner organization".
+#
+# Making this merge requires a dedicated GitHub App installed on the repo and
+# added to the `main-reviews` ruleset as a bypass actor, minting a token via
+# actions/create-github-app-token, then merging synchronously once the required
+# checks are green instead of calling `--auto`.
+# ---------------------------------------------------------------------------
+
+# Dependabot PRs get a read-only token under `pull_request`, so enabling
+# auto-merge requires `pull_request_target`. This workflow never checks out or
+# executes pull request code, and the job is gated on the Dependabot actor.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    name: Dependabot auto-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only Dependabot's own PRs on this repository. Forks of this repo do not
+    # inherit the automerge policy.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'franchb/sigstore-kms-yckms'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # No checkout: this job must never execute code from the pull request.
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # `update-type` is the HIGHEST semver change in the PR, so a grouped
+      # update is judged by its most significant bump. Go modules automerge on
+      # patch only. The github-actions group also automerges on minor, because
+      # actions are pinned to digests and reviewed as digests either way.
+      # Major bumps always stay manual.
+      - name: Enable auto-merge
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch'
+          || (steps.meta.outputs.package-ecosystem == 'github_actions'
+              && steps.meta.outputs.update-type == 'version-update:semver-minor')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
