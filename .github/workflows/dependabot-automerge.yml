@@ -127,8 +127,10 @@ jobs:
             sleep 30
           done
 
-      # Minted only after the checks pass, scoped to this repository and to the
-      # two permissions a merge needs.
+      # Minted only after the checks pass, scoped to this repository and to what
+      # a merge needs. `workflows` is required because merging is a push to the
+      # base branch, and GitHub refuses an app push that touches
+      # .github/workflows/ without it, which every github-actions group PR does.
       - name: Mint merger app token
         id: app-token
         if: steps.policy.outputs.eligible == 'true'
@@ -139,6 +141,7 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       # Synchronous merge: honours the ruleset bypass, unlike auto-merge.
       # `sha` makes it fail rather than merge if the head moved after the checks.
