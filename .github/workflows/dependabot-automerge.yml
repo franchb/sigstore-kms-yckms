@@ -19,11 +19,13 @@ name: Dependabot auto-merge
 # secrets, and `pull_request_target` withholds secrets whenever the PR author is
 # dependabot[bot]. `workflow_run` runs this file from the default branch with
 # Actions secrets. It never checks out or executes pull request code; it only
-# reads PR metadata through the API. Each listed workflow produces required
-# checks, so re-running any of them after a flake re-fires this job.
+# reads PR metadata through the API. Each listed workflow produces a required
+# check or the CodeQL results the `code_scanning` rule waits on, so whichever
+# finishes last starts the run that merges, and re-running one after a flake
+# re-fires this job.
 on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
-    workflows: [CI, Dependency Review, PR Title, Validate GitHub Actions]
+    workflows: [CI, CodeQL, Dependency Review, PR Title, Validate GitHub Actions]
     types: [completed]
 
 permissions: {}
