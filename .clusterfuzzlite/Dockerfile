@@ -1,4 +1,4 @@
-FROM gcr.io/oss-fuzz-base/base-builder-go@sha256:e5e5ecf4fb18a2f47bf0462c37e35728e8f6023ee4b7ff8bc5f903e6acba46da
+FROM gcr.io/oss-fuzz-base/base-builder-go@sha256:56e501922c95c648f144a451add2ddde979f8068fed695443a8dd0b8f5084bd2
 COPY . $SRC/sigstore-kms-yckms
 WORKDIR $SRC/sigstore-kms-yckms
 COPY .clusterfuzzlite/build.sh $SRC/
