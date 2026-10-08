@@ -1,10 +1,9 @@
 name: "Validate GitHub Actions"
 
 on:
+  # Unfiltered on PRs: `Lint` is a required check, and a path-filtered required
+  # check never reports on PRs outside the filter, which blocks them for good.
   pull_request:
-    paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
   push:
     branches: [main]
     paths:

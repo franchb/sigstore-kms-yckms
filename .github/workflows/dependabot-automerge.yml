@@ -1,68 +1,193 @@
 name: Dependabot auto-merge
 
-# ---------------------------------------------------------------------------
-# KNOWN NOT TO COMPLETE A MERGE TODAY. Kept because the policy logic below is
-# correct and reusable, but two GitHub limitations stop it short of merging:
+# Merges Dependabot PRs that pass policy once every required check is green.
 #
-# 1. GitHub's auto-merge does not honour ruleset `bypass_actors`. The bypass is
-#    enforced on the synchronous merge endpoint, but the deferred auto-merge
-#    completion path never re-checks it, so an auto-merge PR stays BLOCKED.
-#    GitHub Support calls this a known limitation of branch rulesets with no
-#    near-term fix. https://github.com/orgs/community/discussions/162623
+# GitHub's own auto-merge (`gh pr merge --auto`) cannot do this here: its
+# deferred completion path ignores ruleset bypass actors, so the 2-approval
+# `main-reviews` ruleset blocks it forever
+# (https://github.com/orgs/community/discussions/162623). The synchronous merge
+# endpoint does honour the bypass, so this job waits for the required checks
+# itself and then merges with a token from a dedicated GitHub App, which is the
+# `main-reviews` bypass actor. GITHUB_TOKEN cannot be one: the API rejects
+# github-actions[bot] as a bypass actor on a user-owned repository.
 #
-# 2. The bypass actor has to name whoever CALLS the merge API, not the PR
-#    author. Dependabot never merges; this workflow does. GITHUB_TOKEN acts as
-#    github-actions[bot], and that integration cannot be a bypass actor on a
-#    user-owned repository -- the API rejects it with "Actor GitHub Actions
-#    integration must be part of the ruleset source or owner organization".
-#
-# Making this merge requires a dedicated GitHub App installed on the repo and
-# added to the `main-reviews` ruleset as a bypass actor, minting a token via
-# actions/create-github-app-token, then merging synchronously once the required
-# checks are green instead of calling `--auto`.
-# ---------------------------------------------------------------------------
+# Setup (until done, the job is skipped):
+#   vars.DEPENDABOT_MERGER_CLIENT_ID      the app's client ID
+#   secrets.DEPENDABOT_MERGER_PRIVATE_KEY the app's private key (PEM)
 
-# Dependabot PRs get a read-only token under `pull_request`, so enabling
-# auto-merge requires `pull_request_target`. This workflow never checks out or
-# executes pull request code, and the job is gated on the Dependabot actor.
+# Why workflow_run: Dependabot-triggered `pull_request` runs get no Actions
+# secrets, and `pull_request_target` withholds secrets whenever the PR author is
+# dependabot[bot]. `workflow_run` runs this file from the default branch with
+# Actions secrets. It never checks out or executes pull request code; it only
+# reads PR metadata through the API. Each listed workflow produces a required
+# check or the CodeQL results the `code_scanning` rule waits on, so whichever
+# finishes last starts the run that merges, and re-running one after a flake
+# re-fires this job.
 on: # zizmor: ignore[dangerous-triggers]
-  pull_request_target:
+  workflow_run:
+    workflows: [CI, CodeQL, Dependency Review, PR Title, Validate GitHub Actions]
+    types: [completed]
 
 permissions: {}
+
+concurrency:
+  group: dependabot-automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
 jobs:
   auto-merge:
     name: Dependabot auto-merge
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Only Dependabot's own PRs on this repository. Forks of this repo do not
-    # inherit the automerge policy.
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'franchb/sigstore-kms-yckms'
+    timeout-minutes: 30
+    if: >-
+      github.repository == 'franchb/sigstore-kms-yckms'
+      && vars.DEPENDABOT_MERGER_CLIENT_ID != ''
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     permissions:
-      contents: write
-      pull-requests: write
+      checks: read
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
-      # No checkout: this job must never execute code from the pull request.
-      - name: Fetch Dependabot metadata
-        id: meta
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      # The event names a commit, not a PR. Resolve the open Dependabot PR whose
+      # head is exactly that commit, so nothing below acts on a different head.
+      - name: Resolve pull request
+        id: pr
+        run: |
+          pr=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" | jq -c \
+            --arg ref "$HEAD_BRANCH" --arg sha "$HEAD_SHA" --arg repo "$REPO" \
+            '[.[] | select(.state == "open" and .head.ref == $ref and .head.sha == $sha
+                     and .user.login == "dependabot[bot]" and .head.repo.full_name == $repo)] | first // empty')
+          if [ -z "$pr" ]; then
+            echo "no open Dependabot PR with head $HEAD_SHA; nothing to do."
+            exit 0
+          fi
+          {
+            echo "number=$(jq -r .number <<<"$pr")"
+            echo "base=$(jq -r .base.ref <<<"$pr")"
+            echo "found=true"
+          } >> "$GITHUB_OUTPUT"
+          jq -r '"PR #\(.number): \(.title)"' <<<"$pr"
 
-      # `update-type` is the HIGHEST semver change in the PR, so a grouped
-      # update is judged by its most significant bump. Go modules automerge on
-      # patch only. The github-actions group also automerges on minor, because
-      # actions are pinned to digests and reviewed as digests either way.
-      # Major bumps always stay manual.
-      - name: Enable auto-merge
-        if: >-
-          steps.meta.outputs.update-type == 'version-update:semver-patch'
-          || (steps.meta.outputs.package-ecosystem == 'github_actions'
-              && steps.meta.outputs.update-type == 'version-update:semver-minor')
+      # Anyone with write access can push to a Dependabot branch, and a commit's
+      # author is just a field. Dependabot PRs are always a single commit that
+      # GitHub itself committed (web-flow) and signed, with Dependabot as author.
+      # A human signing with their own key becomes the committer, and a web-UI
+      # edit carries the human as author, so both fail here.
+      - name: Verify Dependabot provenance
+        if: steps.pr.outputs.found == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          commits=$(gh api "repos/$REPO/pulls/$PR_NUMBER/commits?per_page=100")
+          count=$(jq length <<<"$commits")
+          bad=$(jq -r '.[] | select(
+                  .author.login != "dependabot[bot]" or .author.type != "Bot"
+                  or .committer.login != "web-flow"
+                  or .commit.verification.verified != true) | .sha' <<<"$commits")
+          if [ "$count" -ne 1 ] || [ -n "$bad" ]; then
+            echo "::warning::expected one GitHub-signed Dependabot commit, got $count (rejected: ${bad:-none}); leaving for manual review."
+            exit 1
+          fi
+          [ "$(jq -r '.[0].sha' <<<"$commits")" = "$HEAD_SHA" ] || { echo "::error::PR head moved."; exit 1; }
+
+      # Same policy fetch-metadata would apply, read from the trailer on the
+      # commit just verified. `update-type` per dependency; the PR is judged by
+      # its HIGHEST bump. Every ecosystem merges on patch; the github-actions
+      # group also on minor, because actions are pinned to digests and reviewed
+      # as digests either way. Major, and bumps with no semver type (Docker
+      # digests), stay manual.
+      - name: Apply update policy
+        id: policy
+        if: steps.pr.outputs.found == 'true'
+        run: |
+          ecosystem=$(cut -d/ -f2 <<<"$HEAD_BRANCH")
+          types=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq .commit.message \
+            | awk '/^updated-dependencies:/ {f = 1; next} /^\.\.\.$/ {f = 0} f && $1 == "update-type:" {print $2}')
+          if grep -q semver-major <<<"$types"; then highest="major"
+          elif grep -q semver-minor <<<"$types"; then highest="minor"
+          elif grep -q semver-patch <<<"$types"; then highest="patch"
+          else highest="none"; fi
+          eligible=false
+          case "$highest" in
+            patch) eligible=true ;;
+            minor) [ "$ecosystem" = github_actions ] && eligible=true ;;
+          esac
+          echo "ecosystem=$ecosystem highest=$highest eligible=$eligible"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for required checks
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          BASE: ${{ steps.pr.outputs.base }}
+        run: |
+          required=$(gh api "repos/$REPO/rules/branches/$BASE" \
+            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique | .[]')
+          if [ -z "$required" ]; then
+            echo "::error::$BASE has no required status checks; refusing to merge unguarded."
+            exit 1
+          fi
+          while IFS= read -r ctx; do echo "required check: $ctx"; done <<<"$required"
+
+          deadline=$((SECONDS + 25 * 60))
+          while :; do
+            runs=$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" \
+              --jq '.check_runs[] | {name, status, conclusion}' | jq -s .)
+            pending=0
+            while IFS= read -r ctx; do
+              state=$(jq -r --arg n "$ctx" \
+                '[.[] | select(.name == $n)] | if length == 0 then "missing"
+                 elif .[0].status != "completed" then "pending" else .[0].conclusion end' <<<"$runs")
+              case "$state" in
+                success|neutral|skipped) ;;
+                missing|pending) pending=1 ;;
+                *) echo "::error::required check '$ctx' concluded '$state'."; exit 1 ;;
+              esac
+            done <<<"$required"
+            [ "$pending" -eq 0 ] && { echo "all required checks green"; break; }
+            [ "$SECONDS" -lt "$deadline" ] || { echo "::error::timed out waiting for required checks."; exit 1; }
+            sleep 30
+          done
+
+      # Minted only after the checks pass, scoped to this repository and to what
+      # a merge needs. `workflows` is required because merging is a push to the
+      # base branch, and GitHub refuses an app push that touches
+      # .github/workflows/ without it, which every github-actions group PR does.
+      - name: Mint merger app token
+        id: app-token
+        if: steps.policy.outputs.eligible == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DEPENDABOT_MERGER_CLIENT_ID }}
+          private-key: ${{ secrets.DEPENDABOT_MERGER_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      # Synchronous merge: honours the ruleset bypass, unlike auto-merge. The
+      # bypass covers only `main-reviews`; `main-checks` still applies. `sha`
+      # makes it fail rather than merge if the head moved after the checks.
+      - name: Merge
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          title=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .title)
+          gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/merge" \
+            -f merge_method=squash \
+            -f sha="$HEAD_SHA" \
+            -f commit_title="$title (#$PR_NUMBER)"
