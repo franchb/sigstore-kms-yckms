@@ -25,6 +25,8 @@ import "github.com/franchb/sigstore-kms-yckms/pkg/yckms"
 
 ## Verifying releases
 
+`v0.2.0` has no downloadable artifacts. `v0.2.1` is the signed release, and it updates `golang.org/x/net` from v0.59.0 to v0.60.0 and the Go toolchain from 1.27.1 to 1.27.3.
+
 Release archives carry a keyless [cosign](https://github.com/sigstore/cosign)
 signature over the checksum file, plus SLSA build provenance.
 
