@@ -24,6 +24,10 @@ updates:
       # https://github.com/yandex-cloud/go-sdk/issues/54
       - dependency-name: "github.com/yandex-cloud/go-genproto"
         versions: [">= 0.132.0"]
+      # Every go-sdk release from 0.42.0 on requires go-genproto >= 0.133.0,
+      # so a go-sdk bump drags the broken go-genproto in transitively.
+      - dependency-name: "github.com/yandex-cloud/go-sdk"
+        versions: [">= 0.42.0"]
 
   - package-ecosystem: "github-actions"
     commit-message:
