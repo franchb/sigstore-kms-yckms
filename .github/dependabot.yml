@@ -18,6 +18,12 @@ updates:
       yandex-cloud:
         patterns:
           - "github.com/yandex-cloud/*"
+    ignore:
+      # go-genproto >= 0.132.0 dropped dataproc/v1/change_freeze_service_grpc.pb.go,
+      # so go-sdk fails to compile against it. Remove once fixed upstream:
+      # https://github.com/yandex-cloud/go-sdk/issues/54
+      - dependency-name: "github.com/yandex-cloud/go-genproto"
+        versions: [">= 0.132.0"]
 
   - package-ecosystem: "github-actions"
     commit-message:
