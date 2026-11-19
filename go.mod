@@ -9,7 +9,7 @@ require (
 	github.com/sigstore/sigstore v1.11.3
 	github.com/yandex-cloud/go-genproto v0.131.0
 	github.com/yandex-cloud/go-sdk v0.41.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 )
 
 require (
